@@ -337,7 +337,7 @@ export default function ImportPage() {
         )}
 
         <p className="text-center text-xs text-[var(--text-tertiary)]">
-          All data stays on your machine. Nothing is uploaded to any server.
+          Your data is stored securely in the team database.
         </p>
       </div>
     </div>

@@ -52,7 +52,7 @@ export default function SettingsPage() {
             <h2 className="font-medium">Anthropic API Key</h2>
           </div>
           <p className="text-sm text-[var(--text-tertiary)]">
-            Required for the AI chatbot. Your key is stored locally in the SQLite database.
+            Required for the AI chatbot. Your key is stored securely in the database.
           </p>
 
           {hasKey && (
