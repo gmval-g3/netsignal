@@ -13,17 +13,17 @@ export async function GET() {
       { data: topLeads },
       { data: messagesPerMonthRaw },
     ] = await Promise.all([
-      supabase.from('contacts').select('*', { count: 'exact', head: true }),
-      supabase.from('messages').select('*', { count: 'exact', head: true }),
-      supabase.from('conversations').select('*', { count: 'exact', head: true }).eq('is_group', false),
-      supabase.from('lead_scores').select('tier'),
+      supabase.from('ns_contacts').select('*', { count: 'exact', head: true }),
+      supabase.from('ns_messages').select('*', { count: 'exact', head: true }),
+      supabase.from('ns_conversations').select('*', { count: 'exact', head: true }).eq('is_group', false),
+      supabase.from('ns_lead_scores').select('tier'),
       supabase
-        .from('lead_scores')
-        .select('total_score, tier, total_messages, last_message_at, contact_id, contacts(full_name, company, position)')
+        .from('ns_lead_scores')
+        .select('total_score, tier, total_messages, last_message_at, contact_id, ns_contacts(full_name, company, position)')
         .order('total_score', { ascending: false })
         .limit(10),
       supabase
-        .from('messages')
+        .from('ns_messages')
         .select('sent_at')
         .not('sent_at', 'is', null),
     ]);
@@ -40,13 +40,13 @@ export async function GET() {
     const twoYearsAgo = new Date();
     twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
     const { count: recentMessages } = await supabase
-      .from('messages')
+      .from('ns_messages')
       .select('*', { count: 'exact', head: true })
       .gte('sent_at', twoYearsAgo.toISOString());
 
     // Format top leads to match existing shape
     const formattedTopLeads = (topLeads || []).map((lead) => {
-      const contact = lead.contacts as unknown as { full_name: string; company: string; position: string } | null;
+      const contact = lead.ns_contacts as unknown as { full_name: string; company: string; position: string } | null;
       return {
         full_name: contact?.full_name || '',
         company: contact?.company || '',

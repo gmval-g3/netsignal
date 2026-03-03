@@ -7,7 +7,7 @@ async function getApiKey(): Promise<string | null> {
   try {
     const supabase = getSupabase();
     const { data } = await supabase
-      .from('settings')
+      .from('ns_settings')
       .select('value')
       .eq('key', 'anthropic_api_key')
       .single();
@@ -28,12 +28,12 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
       const limit = (input.limit as number) || 10;
 
       let q = supabase
-        .from('lead_scores')
+        .from('ns_lead_scores')
         .select(`
           contact_id,
           total_score, tier, total_messages, user_messages, contact_messages,
           last_message_at, reciprocity_score, recency_score,
-          contacts!inner(id, full_name, company, position, email)
+          ns_contacts!inner(id, full_name, company, position, email)
         `)
         .order('total_score', { ascending: false })
         .limit(limit);
@@ -41,7 +41,7 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
       if (query) {
         q = q.or(
           `full_name.ilike.%${query}%,company.ilike.%${query}%,position.ilike.%${query}%`,
-          { referencedTable: 'contacts' }
+          { referencedTable: 'ns_contacts' }
         );
       }
       if (tier && tier !== 'all') {
@@ -52,7 +52,7 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
 
       // Flatten for the LLM
       const results = (data || []).map(row => {
-        const c = row.contacts as unknown as {
+        const c = row.ns_contacts as unknown as {
           id: number; full_name: string; company: string; position: string; email: string;
         };
         return {
@@ -81,27 +81,27 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
 
       // Use Postgres full-text search via textSearch
       const { data } = await supabase
-        .from('messages')
+        .from('ns_messages')
         .select(`
           content, sender_name, sent_at, is_from_user,
-          conversations!inner(contact_id, contacts(full_name, company))
+          ns_conversations!inner(contact_id, ns_contacts(full_name, company))
         `)
         .textSearch('content', query, { type: 'websearch' })
         .limit(limit);
 
       // Flatten
       const results = (data || []).map(row => {
-        const conv = row.conversations as unknown as {
+        const conv = row.ns_conversations as unknown as {
           contact_id: number;
-          contacts: { full_name: string; company: string } | null;
+          ns_contacts: { full_name: string; company: string } | null;
         };
         return {
           content: row.content,
           sender_name: row.sender_name,
           sent_at: row.sent_at,
           is_from_user: row.is_from_user,
-          contact_name: conv?.contacts?.full_name || null,
-          company: conv?.contacts?.company || null,
+          contact_name: conv?.ns_contacts?.full_name || null,
+          company: conv?.ns_contacts?.company || null,
         };
       });
 
@@ -116,10 +116,10 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
 
       if (contactId) {
         const { data } = await supabase
-          .from('contacts')
+          .from('ns_contacts')
           .select(`
             *,
-            lead_scores(
+            ns_lead_scores(
               total_score, tier, reciprocity_score, frequency_score,
               depth_score, signal_score, recency_score,
               total_messages, user_messages, contact_messages, last_message_at
@@ -130,10 +130,10 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
         contactData = data;
       } else if (name) {
         const { data } = await supabase
-          .from('contacts')
+          .from('ns_contacts')
           .select(`
             *,
-            lead_scores(
+            ns_lead_scores(
               total_score, tier, reciprocity_score, frequency_score,
               depth_score, signal_score, recency_score,
               total_messages, user_messages, contact_messages, last_message_at
@@ -148,16 +148,16 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
       if (!contactData) return JSON.stringify({ error: 'Contact not found' });
 
       // Flatten lead_scores into contact
-      const ls = Array.isArray(contactData.lead_scores)
-        ? (contactData.lead_scores as Record<string, unknown>[])[0]
-        : contactData.lead_scores as Record<string, unknown> | null;
+      const ls = Array.isArray(contactData.ns_lead_scores)
+        ? (contactData.ns_lead_scores as Record<string, unknown>[])[0]
+        : contactData.ns_lead_scores as Record<string, unknown> | null;
 
       const contact = { ...contactData, ...ls };
-      delete contact.lead_scores;
+      delete contact.ns_lead_scores;
 
       // Get recent messages
       const { data: convs } = await supabase
-        .from('conversations')
+        .from('ns_conversations')
         .select('id')
         .eq('contact_id', contact.id as number);
 
@@ -166,7 +166,7 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
 
       if (convIds.length > 0) {
         const { data: msgs } = await supabase
-          .from('messages')
+          .from('ns_messages')
           .select('content, sender_name, sent_at, is_from_user')
           .in('conversation_id', convIds)
           .order('sent_at', { ascending: false })
@@ -187,9 +187,9 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
             { count: totalMessages },
             { data: tierData },
           ] = await Promise.all([
-            supabase.from('contacts').select('*', { count: 'exact', head: true }),
-            supabase.from('messages').select('*', { count: 'exact', head: true }),
-            supabase.from('lead_scores').select('tier, total_score'),
+            supabase.from('ns_contacts').select('*', { count: 'exact', head: true }),
+            supabase.from('ns_messages').select('*', { count: 'exact', head: true }),
+            supabase.from('ns_lead_scores').select('tier, total_score'),
           ]);
 
           const tiers: Record<string, number> = {};
@@ -209,13 +209,13 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
         }
         case 'top_leads': {
           const { data } = await supabase
-            .from('lead_scores')
-            .select('total_score, tier, total_messages, contacts!inner(full_name, company, position)')
+            .from('ns_lead_scores')
+            .select('total_score, tier, total_messages, ns_contacts!inner(full_name, company, position)')
             .order('total_score', { ascending: false })
             .limit(20);
 
           const leads = (data || []).map(row => {
-            const c = row.contacts as unknown as { full_name: string; company: string; position: string };
+            const c = row.ns_contacts as unknown as { full_name: string; company: string; position: string };
             return {
               full_name: c.full_name,
               company: c.company,
@@ -230,15 +230,15 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
         }
         case 'companies': {
           const { data } = await supabase
-            .from('lead_scores')
-            .select('total_score, contacts!inner(company)')
-            .not('contacts.company', 'is', null)
-            .not('contacts.company', 'eq', '');
+            .from('ns_lead_scores')
+            .select('total_score, ns_contacts!inner(company)')
+            .not('ns_contacts.company', 'is', null)
+            .not('ns_contacts.company', 'eq', '');
 
           // Aggregate in JS
           const companyMap = new Map<string, { count: number; totalScore: number; topScore: number }>();
           for (const row of data || []) {
-            const c = row.contacts as unknown as { company: string };
+            const c = row.ns_contacts as unknown as { company: string };
             const company = c.company;
             const existing = companyMap.get(company) || { count: 0, totalScore: 0, topScore: 0 };
             existing.count++;
@@ -261,18 +261,18 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
         }
         case 'recent_activity': {
           const { data } = await supabase
-            .from('messages')
-            .select('content, sent_at, is_from_user, conversations!inner(contacts(full_name, company))')
+            .from('ns_messages')
+            .select('content, sent_at, is_from_user, ns_conversations!inner(ns_contacts(full_name, company))')
             .order('sent_at', { ascending: false })
             .limit(20);
 
           const recent = (data || []).map(row => {
-            const conv = row.conversations as unknown as {
-              contacts: { full_name: string; company: string } | null;
+            const conv = row.ns_conversations as unknown as {
+              ns_contacts: { full_name: string; company: string } | null;
             };
             return {
-              full_name: conv?.contacts?.full_name || '',
-              company: conv?.contacts?.company || '',
+              full_name: conv?.ns_contacts?.full_name || '',
+              company: conv?.ns_contacts?.company || '',
               content: row.content,
               sent_at: row.sent_at,
               is_from_user: row.is_from_user,
@@ -283,19 +283,19 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
         }
         case 'signal_summary': {
           const { data } = await supabase
-            .from('messages')
-            .select('signal_words_found, content, sent_at, conversations!inner(contacts(full_name, company))')
+            .from('ns_messages')
+            .select('signal_words_found, content, sent_at, ns_conversations!inner(ns_contacts(full_name, company))')
             .eq('has_signal_words', true)
             .order('sent_at', { ascending: false })
             .limit(30);
 
           const signals = (data || []).map(row => {
-            const conv = row.conversations as unknown as {
-              contacts: { full_name: string; company: string } | null;
+            const conv = row.ns_conversations as unknown as {
+              ns_contacts: { full_name: string; company: string } | null;
             };
             return {
-              full_name: conv?.contacts?.full_name || '',
-              company: conv?.contacts?.company || '',
+              full_name: conv?.ns_contacts?.full_name || '',
+              company: conv?.ns_contacts?.company || '',
               signal_words_found: row.signal_words_found,
               content: row.content,
               sent_at: row.sent_at,
@@ -406,7 +406,7 @@ export async function POST(req: NextRequest) {
 export async function DELETE() {
   try {
     const supabase = getSupabase();
-    await supabase.from('chat_history').delete().neq('id', -1);
+    await supabase.from('ns_chat_history').delete().neq('id', -1);
     return NextResponse.json({ success: true });
   } catch {
     return NextResponse.json({ success: true });

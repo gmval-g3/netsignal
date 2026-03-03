@@ -28,13 +28,13 @@ async function buildCsv(
     const supabase = getSupabase();
 
     let query = supabase
-      .from('lead_scores')
+      .from('ns_lead_scores')
       .select(`
         total_score, tier, reciprocity_score, frequency_score,
         depth_score, signal_score, recency_score,
         total_messages, user_messages, contact_messages,
         last_message_at, last_message_preview,
-        contacts!inner(id, full_name, first_name, last_name, email, company, position, linkedin_url, connected_on)
+        ns_contacts!inner(id, full_name, first_name, last_name, email, company, position, linkedin_url, connected_on)
       `)
       .order('total_score', { ascending: false });
 
@@ -56,20 +56,20 @@ async function buildCsv(
 
     // Fetch all contact-tag mappings for these contacts
     const contactIds = data.map(row => {
-      const contact = row.contacts as unknown as { id: number };
+      const contact = row.ns_contacts as unknown as { id: number };
       return contact.id;
     });
 
     const { data: tagMappings } = await supabase
-      .from('contact_tags')
-      .select('contact_id, tags(name)')
+      .from('ns_contact_tags')
+      .select('contact_id, ns_tags(name)')
       .in('contact_id', contactIds);
 
     // Build tag lookup: contact_id -> "tag1; tag2"
     const tagsByContact = new Map<number, string>();
     if (tagMappings) {
       for (const mapping of tagMappings) {
-        const tag = mapping.tags as unknown as { name: string } | null;
+        const tag = mapping.ns_tags as unknown as { name: string } | null;
         if (!tag) continue;
         const existing = tagsByContact.get(mapping.contact_id) || '';
         tagsByContact.set(mapping.contact_id, existing ? `${existing}; ${tag.name}` : tag.name);
@@ -92,7 +92,7 @@ async function buildCsv(
     };
 
     const rows = data.map(row => {
-      const c = row.contacts as unknown as {
+      const c = row.ns_contacts as unknown as {
         id: number; full_name: string; first_name: string; last_name: string;
         email: string; company: string; position: string; linkedin_url: string; connected_on: string;
       };

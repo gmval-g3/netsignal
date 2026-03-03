@@ -24,14 +24,14 @@ export async function GET(req: NextRequest) {
     // We need to join lead_scores with contacts. Use lead_scores as base.
     // Supabase foreign-key join: lead_scores has contact_id -> contacts(id)
     let query = supabase
-      .from('lead_scores')
+      .from('ns_lead_scores')
       .select(`
         contact_id,
         total_score, tier, reciprocity_score, frequency_score,
         depth_score, signal_score, recency_score,
         total_messages, user_messages, contact_messages,
         last_message_at, last_message_preview,
-        contacts!inner(id, full_name, company, position, email, linkedin_url)
+        ns_contacts!inner(id, full_name, company, position, email, linkedin_url)
       `);
 
     // Tier filter
@@ -57,7 +57,7 @@ export async function GET(req: NextRequest) {
       // Use or() filter on the joined contacts table for name/company/position
       query = query.or(
         `full_name.ilike.%${search}%,company.ilike.%${search}%,position.ilike.%${search}%`,
-        { referencedTable: 'contacts' }
+        { referencedTable: 'ns_contacts' }
       );
     }
 
@@ -65,7 +65,7 @@ export async function GET(req: NextRequest) {
     let tagContactIds: number[] | null = null;
     if (tag) {
       const { data: tagMappings } = await supabase
-        .from('contact_tags')
+        .from('ns_contact_tags')
         .select('contact_id')
         .eq('tag_id', parseInt(tag));
       tagContactIds = (tagMappings || []).map(t => t.contact_id);
@@ -77,7 +77,7 @@ export async function GET(req: NextRequest) {
 
     // Sort — for full_name we sort via the referenced table
     if (sortCol === 'full_name') {
-      query = query.order('full_name', { referencedTable: 'contacts', ascending });
+      query = query.order('full_name', { referencedTable: 'ns_contacts', ascending });
     } else {
       query = query.order(sortCol, { ascending });
     }
@@ -90,8 +90,8 @@ export async function GET(req: NextRequest) {
 
     // Also get total count with same filters
     let countQuery = supabase
-      .from('lead_scores')
-      .select('contact_id, contacts!inner(id, full_name, company, position)', { count: 'exact', head: true });
+      .from('ns_lead_scores')
+      .select('contact_id, ns_contacts!inner(id, full_name, company, position)', { count: 'exact', head: true });
 
     if (tiers && tiers !== 'all') {
       const tierList = tiers.split(',').filter(Boolean);
@@ -108,7 +108,7 @@ export async function GET(req: NextRequest) {
     if (search) {
       countQuery = countQuery.or(
         `full_name.ilike.%${search}%,company.ilike.%${search}%,position.ilike.%${search}%`,
-        { referencedTable: 'contacts' }
+        { referencedTable: 'ns_contacts' }
       );
     }
     if (tagContactIds) {
@@ -119,7 +119,7 @@ export async function GET(req: NextRequest) {
 
     // Flatten the joined shape to match existing API contract
     const leads = (data || []).map(row => {
-      const contact = row.contacts as unknown as {
+      const contact = row.ns_contacts as unknown as {
         id: number; full_name: string; company: string;
         position: string; email: string; linkedin_url: string;
       };

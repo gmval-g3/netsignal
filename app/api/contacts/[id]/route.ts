@@ -12,10 +12,10 @@ export async function GET(
 
     // Get contact with lead score data
     const { data: contactData, error: contactError } = await supabase
-      .from('contacts')
+      .from('ns_contacts')
       .select(`
         *,
-        lead_scores(
+        ns_lead_scores(
           total_score, tier, reciprocity_score, frequency_score,
           depth_score, signal_score, recency_score,
           total_messages, user_messages, contact_messages, last_message_at
@@ -29,9 +29,9 @@ export async function GET(
     }
 
     // Flatten the contact + lead_scores into a single object to match existing shape
-    const leadScore = Array.isArray(contactData.lead_scores)
-      ? contactData.lead_scores[0]
-      : contactData.lead_scores;
+    const leadScore = Array.isArray(contactData.ns_lead_scores)
+      ? contactData.ns_lead_scores[0]
+      : contactData.ns_lead_scores;
 
     const contact = {
       ...contactData,
@@ -47,11 +47,11 @@ export async function GET(
       contact_messages: leadScore?.contact_messages ?? null,
       last_message_at: leadScore?.last_message_at ?? null,
     };
-    delete (contact as Record<string, unknown>).lead_scores;
+    delete (contact as Record<string, unknown>).ns_lead_scores;
 
     // Get all conversations for this contact
     const { data: conversations } = await supabase
-      .from('conversations')
+      .from('ns_conversations')
       .select('id, message_count, first_message_at, last_message_at, is_group')
       .eq('contact_id', contactId)
       .order('last_message_at', { ascending: false });
@@ -62,7 +62,7 @@ export async function GET(
 
     if (convIds.length > 0) {
       const { data: msgData } = await supabase
-        .from('messages')
+        .from('ns_messages')
         .select('sender_name, content, sent_at, is_from_user, has_signal_words, signal_words_found')
         .in('conversation_id', convIds)
         .order('sent_at', { ascending: false })

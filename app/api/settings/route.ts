@@ -5,7 +5,7 @@ export async function GET() {
   try {
     const supabase = getSupabase();
     const { data: rows } = await supabase
-      .from('settings')
+      .from('ns_settings')
       .select('key, value');
 
     const settings: Record<string, string> = {};
@@ -31,7 +31,7 @@ export async function PUT(req: NextRequest) {
 
     if (body.anthropic_api_key !== undefined) {
       await supabase
-        .from('settings')
+        .from('ns_settings')
         .upsert({ key: 'anthropic_api_key', value: body.anthropic_api_key }, { onConflict: 'key' });
     }
 

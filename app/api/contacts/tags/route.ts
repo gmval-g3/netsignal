@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
     if (action === 'remove') {
       for (const cid of ids) {
         await supabase
-          .from('contact_tags')
+          .from('ns_contact_tags')
           .delete()
           .eq('contact_id', cid)
           .eq('tag_id', tagId);
@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
     } else {
       const rows = ids.map(cid => ({ contact_id: cid, tag_id: tagId }));
       await supabase
-        .from('contact_tags')
+        .from('ns_contact_tags')
         .upsert(rows, { onConflict: 'contact_id,tag_id', ignoreDuplicates: true });
     }
 
@@ -43,21 +43,21 @@ export async function GET(req: NextRequest) {
 
     if (contactId) {
       const { data: mappings } = await supabase
-        .from('contact_tags')
-        .select('tag_id, tags(*)')
+        .from('ns_contact_tags')
+        .select('tag_id, ns_tags(*)')
         .eq('contact_id', parseInt(contactId));
 
-      const tags = (mappings || []).map(m => m.tags).filter(Boolean);
+      const tags = (mappings || []).map(m => m.ns_tags).filter(Boolean);
       return NextResponse.json(tags);
     }
 
     // Return all contact-tag mappings (for bulk display)
     const { data: mappings } = await supabase
-      .from('contact_tags')
-      .select('contact_id, tag_id, tags(name, color)');
+      .from('ns_contact_tags')
+      .select('contact_id, tag_id, ns_tags(name, color)');
 
     const result = (mappings || []).map(m => {
-      const tag = m.tags as unknown as { name: string; color: string } | null;
+      const tag = m.ns_tags as unknown as { name: string; color: string } | null;
       return {
         contact_id: m.contact_id,
         tag_id: m.tag_id,
