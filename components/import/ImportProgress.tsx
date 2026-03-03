@@ -15,6 +15,7 @@ interface ImportProgressProps {
     cold: number;
   };
   error?: string;
+  progress?: string;
 }
 
 const STEPS = [
@@ -26,7 +27,7 @@ const STEPS = [
 
 const stepOrder = ['uploading', 'processing', 'scoring', 'complete'];
 
-export default function ImportProgress({ status, stats, scoreStats, error }: ImportProgressProps) {
+export default function ImportProgress({ status, stats, scoreStats, error, progress }: ImportProgressProps) {
   if (status === 'idle') return null;
 
   const currentIdx = stepOrder.indexOf(status);
@@ -57,6 +58,10 @@ export default function ImportProgress({ status, stats, scoreStats, error }: Imp
           );
         })}
       </div>
+
+      {progress && status !== 'complete' && status !== 'error' && (
+        <p className="text-sm text-[var(--text-secondary)] animate-pulse">{progress}</p>
+      )}
 
       {error && (
         <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
