@@ -148,7 +148,7 @@ export default function ImportPage() {
 
       // --- Step 6: Prepare and send conversations in batches ---
       const convEntries = Array.from(conversationMap.entries());
-      const convBatchSize = 30;
+      const convBatchSize = 200;
       let messageCount = 0;
       let conversationCount = 0;
 

@@ -130,7 +130,7 @@ export async function POST(req: NextRequest) {
       }
 
       case 'conversations': {
-        // Insert a batch of conversations + their messages
+        // Bulk insert conversations + messages
         const items = body.batch as Array<{
           id: string;
           contact_id: number | null;
@@ -145,35 +145,33 @@ export async function POST(req: NextRequest) {
           }>;
         }>;
 
+        // Bulk insert all conversations at once
+        const convRows = items.map(conv => ({
+          id: conv.id,
+          contact_id: conv.contact_id,
+          is_group: conv.is_group,
+          message_count: conv.message_count,
+          first_message_at: conv.first_message_at,
+          last_message_at: conv.last_message_at,
+        }));
+
+        const { error: convError } = await supabase
+          .from('ns_conversations')
+          .upsert(convRows, { onConflict: 'id', ignoreDuplicates: true });
+        if (convError) throw convError;
+
+        // Collect all messages and bulk insert
+        const allMsgRows: Array<Record<string, unknown>> = [];
         for (const conv of items) {
-          const { error: convError } = await supabase
-            .from('ns_conversations')
-            .insert({
-              id: conv.id,
-              contact_id: conv.contact_id,
-              is_group: conv.is_group,
-              message_count: conv.message_count,
-              first_message_at: conv.first_message_at,
-              last_message_at: conv.last_message_at,
-            });
-
-          if (convError) {
-            if (convError.message?.includes('duplicate')) continue;
-            throw convError;
+          for (const m of conv.messages) {
+            allMsgRows.push({ conversation_id: conv.id, ...m });
           }
+        }
 
-          if (conv.messages.length > 0) {
-            const msgRows = conv.messages.map(m => ({
-              conversation_id: conv.id,
-              ...m,
-            }));
-
-            for (let i = 0; i < msgRows.length; i += 500) {
-              const batch = msgRows.slice(i, i + 500);
-              const { error: msgError } = await supabase.from('ns_messages').insert(batch);
-              if (msgError) throw msgError;
-            }
-          }
+        for (let i = 0; i < allMsgRows.length; i += 1000) {
+          const batch = allMsgRows.slice(i, i + 1000);
+          const { error: msgError } = await supabase.from('ns_messages').insert(batch);
+          if (msgError) throw msgError;
         }
 
         return NextResponse.json({ success: true, count: items.length });
