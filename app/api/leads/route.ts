@@ -123,14 +123,16 @@ export async function GET(req: NextRequest) {
       return contact.id;
     });
 
-    // Fetch enrichment status for these contacts
-    let enrichedSet = new Set<number>();
+    // Fetch enrichment data for these contacts
+    const enrichedMap = new Map<number, { current_title: string | null; current_company: string | null; headline: string | null }>();
     if (contactIds.length > 0) {
       const { data: enriched } = await supabase
         .from('ns_enriched_contacts')
-        .select('contact_id')
+        .select('contact_id, current_title, current_company, headline')
         .in('contact_id', contactIds);
-      enrichedSet = new Set((enriched || []).map(e => e.contact_id));
+      for (const e of enriched || []) {
+        enrichedMap.set(e.contact_id, e);
+      }
     }
 
     const leads = (data || []).map(row => {
@@ -138,11 +140,13 @@ export async function GET(req: NextRequest) {
         id: number; full_name: string; company: string;
         position: string; email: string; linkedin_url: string;
       };
+      const enrichment = enrichedMap.get(contact.id);
       return {
         id: contact.id,
         full_name: contact.full_name,
-        company: contact.company,
-        position: contact.position,
+        company: enrichment?.current_company || contact.company,
+        position: enrichment?.current_title || contact.position,
+        headline: enrichment?.headline || null,
         email: contact.email,
         linkedin_url: contact.linkedin_url,
         total_score: row.total_score,
@@ -157,7 +161,7 @@ export async function GET(req: NextRequest) {
         contact_messages: row.contact_messages,
         last_message_at: row.last_message_at,
         last_message_preview: row.last_message_preview,
-        is_enriched: enrichedSet.has(contact.id),
+        is_enriched: !!enrichment,
       };
     });
 
