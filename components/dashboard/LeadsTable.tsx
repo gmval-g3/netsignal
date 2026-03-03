@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { ExternalLink, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ExternalLink, ChevronLeft, ChevronRight, Sparkles } from 'lucide-react';
 
 interface Tag {
   tag_id: number;
@@ -22,6 +22,7 @@ interface Lead {
   contact_messages: number;
   last_message_at: string | null;
   linkedin_url: string | null;
+  is_enriched?: boolean;
 }
 
 interface LeadsTableProps {
@@ -120,7 +121,12 @@ export default function LeadsTable({ leads, page, totalPages, onPageChange, sele
                   </td>
                   <td className="px-4 py-3" onClick={() => router.push(`/dashboard/${lead.id}`)}>
                     <div>
-                      <p className="font-medium text-[var(--text-primary)]">{lead.full_name}</p>
+                      <p className="font-medium text-[var(--text-primary)] flex items-center gap-1.5">
+                        {lead.full_name}
+                        {lead.is_enriched && (
+                          <Sparkles size={12} className="text-[var(--accent)] flex-shrink-0" />
+                        )}
+                      </p>
                       {lead.position && (
                         <p className="text-xs text-[var(--text-tertiary)] mt-0.5 truncate max-w-[200px]">{lead.position}</p>
                       )}

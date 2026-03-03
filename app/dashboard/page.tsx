@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import MetricsRow from '@/components/dashboard/MetricsRow';
 import FilterBar from '@/components/dashboard/FilterBar';
 import LeadsTable from '@/components/dashboard/LeadsTable';
-import { Loader2, Download, Tag, X, Plus } from 'lucide-react';
+import { Loader2, Download, Tag, X, Plus, Sparkles } from 'lucide-react';
 
 interface Stats {
   totalContacts: number;
@@ -42,6 +42,10 @@ export default function DashboardPage() {
 
   // Selection
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+
+  // Enrichment
+  const [enriching, setEnriching] = useState(false);
+  const [enrichResult, setEnrichResult] = useState<{ success: number; failed: number } | null>(null);
 
   // Tags
   const [allTags, setAllTags] = useState<TagData[]>([]);
@@ -188,6 +192,40 @@ export default function DashboardPage() {
     fetchTagMappings();
   };
 
+  // Enrich selected contacts
+  const enrichSelected = async () => {
+    if (selectedIds.size === 0 || enriching) return;
+    setEnriching(true);
+    setEnrichResult(null);
+    try {
+      const ids = Array.from(selectedIds);
+      // Process in batches of 25
+      let totalSuccess = 0;
+      let totalFailed = 0;
+      for (let i = 0; i < ids.length; i += 25) {
+        const batch = ids.slice(i, i + 25);
+        const res = await fetch('/api/enrich', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contactIds: batch }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          totalSuccess += data.success || 0;
+          totalFailed += data.failed || 0;
+        }
+      }
+      setEnrichResult({ success: totalSuccess, failed: totalFailed });
+      // Refresh leads to update enrichment indicators
+      fetchLeads();
+      setTimeout(() => setEnrichResult(null), 5000);
+    } catch (err) {
+      console.error('Enrichment failed:', err);
+    } finally {
+      setEnriching(false);
+    }
+  };
+
   if (!stats) {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-48px)]">
@@ -243,6 +281,21 @@ export default function DashboardPage() {
             <Download size={14} />
             Download Selected
           </button>
+
+          <button
+            onClick={enrichSelected}
+            disabled={enriching}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--accent-muted)] border border-[var(--accent)]/30 text-sm text-[var(--accent)] hover:bg-[var(--accent)]/20 transition-colors disabled:opacity-50"
+          >
+            {enriching ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+            {enriching ? 'Enriching...' : 'Enrich Selected'}
+          </button>
+
+          {enrichResult && (
+            <span className="text-xs text-green-400 animate-fade-in">
+              {enrichResult.success} enriched{enrichResult.failed > 0 ? `, ${enrichResult.failed} failed` : ''}
+            </span>
+          )}
 
           <div className="relative">
             <button

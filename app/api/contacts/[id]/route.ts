@@ -71,7 +71,19 @@ export async function GET(
       messages = msgData || [];
     }
 
-    return NextResponse.json({ contact, conversations: conversations || [], messages });
+    // Get enrichment data if available
+    const { data: enrichmentData } = await supabase
+      .from('ns_enriched_contacts')
+      .select('*')
+      .eq('contact_id', contactId)
+      .single();
+
+    return NextResponse.json({
+      contact,
+      conversations: conversations || [],
+      messages,
+      enrichment: enrichmentData || null,
+    });
   } catch (error) {
     console.error('Contact detail error:', error);
     return NextResponse.json({ error: 'Failed to load contact' }, { status: 500 });

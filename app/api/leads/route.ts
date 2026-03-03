@@ -118,6 +118,21 @@ export async function GET(req: NextRequest) {
     const { count: total } = await countQuery;
 
     // Flatten the joined shape to match existing API contract
+    const contactIds = (data || []).map(row => {
+      const contact = row.ns_contacts as unknown as { id: number };
+      return contact.id;
+    });
+
+    // Fetch enrichment status for these contacts
+    let enrichedSet = new Set<number>();
+    if (contactIds.length > 0) {
+      const { data: enriched } = await supabase
+        .from('ns_enriched_contacts')
+        .select('contact_id')
+        .in('contact_id', contactIds);
+      enrichedSet = new Set((enriched || []).map(e => e.contact_id));
+    }
+
     const leads = (data || []).map(row => {
       const contact = row.ns_contacts as unknown as {
         id: number; full_name: string; company: string;
@@ -142,6 +157,7 @@ export async function GET(req: NextRequest) {
         contact_messages: row.contact_messages,
         last_message_at: row.last_message_at,
         last_message_preview: row.last_message_preview,
+        is_enriched: enrichedSet.has(contact.id),
       };
     });
 

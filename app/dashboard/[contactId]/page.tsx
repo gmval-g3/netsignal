@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, ExternalLink, Mail, Building2, Briefcase, Calendar, Loader2 } from 'lucide-react';
+import { ArrowLeft, ExternalLink, Mail, Building2, Briefcase, Calendar, Loader2, Sparkles, MapPin, Users, UserPlus } from 'lucide-react';
 
 interface Contact {
   id: number;
@@ -34,6 +34,19 @@ interface Message {
   is_from_user: number;
   has_signal_words: number;
   signal_words_found: string | null;
+}
+
+interface Enrichment {
+  headline: string | null;
+  bio: string | null;
+  current_title: string | null;
+  current_company: string | null;
+  company_url: string | null;
+  profile_picture_url: string | null;
+  location: string | null;
+  connections: number | null;
+  followers: number | null;
+  enriched_at: string | null;
 }
 
 const SCORE_LABELS = [
@@ -81,6 +94,7 @@ export default function ContactDetailPage({ params }: { params: { contactId: str
   const router = useRouter();
   const [contact, setContact] = useState<Contact | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [enrichment, setEnrichment] = useState<Enrichment | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -89,6 +103,7 @@ export default function ContactDetailPage({ params }: { params: { contactId: str
       .then(data => {
         setContact(data.contact);
         setMessages(data.messages || []);
+        setEnrichment(data.enrichment || null);
       })
       .catch(console.error)
       .finally(() => setLoading(false));
@@ -186,6 +201,66 @@ export default function ContactDetailPage({ params }: { params: { contactId: str
               </div>
             </div>
           </div>
+
+          {enrichment && (
+            <div className="p-4 rounded-lg bg-[var(--bg-secondary)] border border-[var(--accent)]/20 space-y-3">
+              <div className="flex items-center gap-2">
+                <Sparkles size={14} className="text-[var(--accent)]" />
+                <h3 className="text-sm font-medium text-[var(--text-secondary)]">Enriched Profile</h3>
+              </div>
+
+              {enrichment.headline && (
+                <p className="text-sm text-[var(--text-primary)]">{enrichment.headline}</p>
+              )}
+
+              {enrichment.current_title && enrichment.current_company && (
+                <div className="flex items-center gap-1.5 text-sm text-[var(--text-secondary)]">
+                  <Briefcase size={13} />
+                  <span>{enrichment.current_title} at {enrichment.current_company}</span>
+                </div>
+              )}
+
+              {enrichment.location && (
+                <div className="flex items-center gap-1.5 text-sm text-[var(--text-secondary)]">
+                  <MapPin size={13} />
+                  <span>{enrichment.location}</span>
+                </div>
+              )}
+
+              <div className="flex gap-4 text-sm">
+                {enrichment.connections != null && (
+                  <div className="flex items-center gap-1.5 text-[var(--text-secondary)]">
+                    <Users size={13} />
+                    <span>{enrichment.connections.toLocaleString()} connections</span>
+                  </div>
+                )}
+                {enrichment.followers != null && (
+                  <div className="flex items-center gap-1.5 text-[var(--text-secondary)]">
+                    <UserPlus size={13} />
+                    <span>{enrichment.followers.toLocaleString()} followers</span>
+                  </div>
+                )}
+              </div>
+
+              {enrichment.bio && (
+                <div className="pt-2 border-t border-[var(--border)]">
+                  <p className="text-xs text-[var(--text-tertiary)] line-clamp-4">{enrichment.bio}</p>
+                </div>
+              )}
+
+              {enrichment.company_url && (
+                <a
+                  href={enrichment.company_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-xs text-[var(--accent)] hover:underline"
+                >
+                  <Building2 size={12} />
+                  Company Page
+                </a>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Message thread */}
