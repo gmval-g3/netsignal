@@ -46,10 +46,18 @@ async function enrichContact(linkedinUrl: string): Promise<{
     },
   });
 
-  if (!res.ok) return null;
+  if (!res.ok) {
+    console.error(`RapidAPI error for ${username}: ${res.status} ${res.statusText}`);
+    const body = await res.text();
+    console.error('RapidAPI response body:', body);
+    return null;
+  }
 
   const json: LinkedInProfileResponse = await res.json();
-  if (!json.data) return null;
+  if (!json.data) {
+    console.error(`No data in RapidAPI response for ${username}:`, JSON.stringify(json).slice(0, 500));
+    return null;
+  }
 
   const firstPosition = json.data.position?.[0];
 
@@ -130,7 +138,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return NextResponse.json(results);
+    return NextResponse.json({ ...results, message: results.failed > 0 ? 'Some profiles failed - check RapidAPI subscription/quota' : undefined });
   } catch (error) {
     console.error('Enrich error:', error);
     return NextResponse.json(
