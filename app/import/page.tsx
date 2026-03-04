@@ -261,13 +261,17 @@ export default function ImportPage() {
 
       setStats({ connections: connectionCount, messages: messageCount, conversations: conversationCount });
 
-      // --- Step 7: Trigger scoring ---
+      // --- Step 7: Trigger scoring (non-fatal if it fails/times out) ---
       setStatus('scoring');
       setProgress('Scoring relationships...');
-      const scoreRes = await fetch('/api/import', { method: 'PUT' });
-      if (scoreRes.ok) {
-        const scoreData = await safeJson(scoreRes);
-        setScoreStats(scoreData.tiers as { hot: number; warm: number; cold: number });
+      try {
+        const scoreRes = await fetch('/api/import', { method: 'PUT' });
+        if (scoreRes.ok) {
+          const scoreData = await safeJson(scoreRes);
+          setScoreStats(scoreData.tiers as { hot: number; warm: number; cold: number });
+        }
+      } catch (scoreErr) {
+        console.warn('Scoring timed out or failed, data was imported successfully:', scoreErr);
       }
 
       setStatus('complete');
