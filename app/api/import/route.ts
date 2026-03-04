@@ -90,7 +90,7 @@ export async function POST(req: NextRequest) {
 
     switch (body.action) {
       case 'clear': {
-        // Clear all data for this user
+        // Full wipe: clear all data for this user
         await supabase.from('ns_messages').delete().eq('user_id', userId);
         await supabase.from('ns_lead_scores').delete().eq('user_id', userId);
         await supabase.from('ns_conversations').delete().eq('user_id', userId);
@@ -109,6 +109,17 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: true });
       }
 
+      case 'refresh': {
+        // Incremental: save settings, keep enrichment/tags intact
+        if (body.userName || body.userUrl) {
+          await supabase.from('ns_settings').upsert([
+            { user_id: userId, key: 'user_name', value: body.userName || '' },
+            { user_id: userId, key: 'user_url', value: body.userUrl || '' },
+          ], { onConflict: 'user_id,key' });
+        }
+        return NextResponse.json({ success: true });
+      }
+
       case 'contacts': {
         const rows = body.batch as Array<{
           full_name: string; first_name: string | null; last_name: string | null;
@@ -118,9 +129,11 @@ export async function POST(req: NextRequest) {
 
         if (rows.length > 0) {
           const rowsWithUser = rows.map(r => ({ ...r, user_id: userId }));
+          // ignoreDuplicates=false in refresh mode so contact info gets updated
+          const ignoreDuplicates = body.mode !== 'refresh';
           const { error } = await supabase
             .from('ns_contacts')
-            .upsert(rowsWithUser, { onConflict: 'user_id,linkedin_url', ignoreDuplicates: true });
+            .upsert(rowsWithUser, { onConflict: 'user_id,linkedin_url', ignoreDuplicates });
           if (error) throw error;
         }
 
@@ -157,6 +170,22 @@ export async function POST(req: NextRequest) {
           }>;
         }>;
 
+        const isRefresh = body.mode === 'refresh';
+        const convIds = items.map(c => c.id);
+
+        if (isRefresh) {
+          // Delete old messages for these conversations so we can re-insert fresh data
+          for (let i = 0; i < convIds.length; i += 200) {
+            const batch = convIds.slice(i, i + 200);
+            await supabase
+              .from('ns_messages')
+              .delete()
+              .eq('user_id', userId)
+              .in('conversation_id', batch);
+          }
+        }
+
+        // Upsert conversations (update metadata in refresh mode)
         const convRows = items.map(conv => ({
           id: conv.id,
           user_id: userId,
@@ -169,9 +198,10 @@ export async function POST(req: NextRequest) {
 
         const { error: convError } = await supabase
           .from('ns_conversations')
-          .upsert(convRows, { onConflict: 'user_id,id', ignoreDuplicates: true });
+          .upsert(convRows, { onConflict: 'user_id,id', ignoreDuplicates: !isRefresh });
         if (convError) throw convError;
 
+        // Insert all messages
         const allMsgRows: Array<Record<string, unknown>> = [];
         for (const conv of items) {
           for (const m of conv.messages) {

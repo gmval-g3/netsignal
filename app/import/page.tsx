@@ -24,6 +24,7 @@ export default function ImportPage() {
   const [existingData, setExistingData] = useState<{ totalContacts: number; totalMessages: number; tiers: Record<string, number> } | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [importMode, setImportMode] = useState<'fresh' | 'refresh'>('fresh');
 
   useEffect(() => {
     Promise.all([
@@ -39,9 +40,10 @@ export default function ImportPage() {
     }).catch(() => setLoading(false));
   }, []);
 
-  const handleImport = useCallback(async () => {
+  const handleImport = useCallback(async (mode: 'fresh' | 'refresh' = 'fresh') => {
     if (!messagesFile || !userName || !userUrl) return;
 
+    const isRefresh = mode === 'refresh';
     setStatus('uploading');
     setError(undefined);
     setProgress('Parsing CSV files...');
@@ -76,14 +78,24 @@ export default function ImportPage() {
 
       setStatus('processing');
 
-      // --- Step 2: Clear existing data + save settings ---
-      setProgress('Clearing existing data...');
-      const clearRes = await fetch('/api/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'clear', userName, userUrl }),
-      });
-      if (!clearRes.ok) throw new Error((await clearRes.json()).error || 'Clear failed');
+      // --- Step 2: Clear or refresh ---
+      if (isRefresh) {
+        setProgress('Preparing refresh...');
+        const refreshRes = await fetch('/api/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'refresh', userName, userUrl }),
+        });
+        if (!refreshRes.ok) throw new Error((await refreshRes.json()).error || 'Refresh init failed');
+      } else {
+        setProgress('Clearing existing data...');
+        const clearRes = await fetch('/api/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'clear', userName, userUrl }),
+        });
+        if (!clearRes.ok) throw new Error((await clearRes.json()).error || 'Clear failed');
+      }
 
       // --- Step 3: Upload contacts in batches ---
       if (contactRows.length > 0) {
@@ -94,7 +106,7 @@ export default function ImportPage() {
           const res = await fetch('/api/import', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'contacts', batch }),
+            body: JSON.stringify({ action: 'contacts', batch, mode }),
           });
           if (!res.ok) throw new Error((await res.json()).error || 'Contact import failed');
         }
@@ -147,7 +159,7 @@ export default function ImportPage() {
           const res = await fetch('/api/import', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'contacts', batch }),
+            body: JSON.stringify({ action: 'contacts', batch, mode }),
           });
           if (!res.ok) throw new Error((await res.json()).error || 'Contact import failed');
         }
@@ -230,7 +242,7 @@ export default function ImportPage() {
         const res = await fetch('/api/import', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'conversations', batch }),
+          body: JSON.stringify({ action: 'conversations', batch, mode }),
         });
         if (!res.ok) {
           const errData = await res.json();
@@ -324,11 +336,11 @@ export default function ImportPage() {
             </div>
 
             <button
-              onClick={() => setShowForm(true)}
+              onClick={() => { setShowForm(true); setImportMode('refresh'); }}
               className="w-full py-3 rounded-lg font-medium bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white flex items-center justify-center gap-2 transition-all"
             >
               <RefreshCw size={16} />
-              Upload Latest Data
+              Refresh with Latest Data
             </button>
 
             <button
@@ -395,7 +407,7 @@ export default function ImportPage() {
             )}
 
             <button
-              onClick={handleImport}
+              onClick={() => handleImport(importMode)}
               disabled={!isReady}
               className={`w-full py-3 rounded-lg font-medium flex items-center justify-center gap-2 transition-all
                 ${isReady
