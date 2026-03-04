@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowRight, Database } from 'lucide-react';
+import { ArrowRight, Database, RefreshCw, Users } from 'lucide-react';
 import DropZone from '@/components/import/DropZone';
 import ImportProgress from '@/components/import/ImportProgress';
 import { parseMessages, detectSignalWords } from '@/lib/parsers/messages';
@@ -21,6 +21,23 @@ export default function ImportPage() {
   const [stats, setStats] = useState<{ connections: number; messages: number; conversations: number } | undefined>();
   const [scoreStats, setScoreStats] = useState<{ hot: number; warm: number; cold: number } | undefined>();
   const [error, setError] = useState<string | undefined>();
+  const [existingData, setExistingData] = useState<{ totalContacts: number; totalMessages: number; tiers: Record<string, number> } | null>(null);
+  const [showForm, setShowForm] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    Promise.all([
+      fetch('/api/stats').then(r => r.json()),
+      fetch('/api/settings').then(r => r.json()),
+    ]).then(([statsData, settings]) => {
+      if (statsData.totalContacts > 0) {
+        setExistingData(statsData);
+      }
+      if (settings.user_name) setUserName(settings.user_name);
+      if (settings.user_url) setUserUrl(settings.user_url);
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, []);
 
   const handleImport = useCallback(async () => {
     if (!messagesFile || !userName || !userUrl) return;
@@ -242,13 +259,21 @@ export default function ImportPage() {
 
   const isReady = messagesFile && userName && userUrl;
 
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-[var(--text-secondary)] animate-pulse">Loading...</div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
       <div className="w-full max-w-xl space-y-8">
         <div className="text-center space-y-2">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[var(--accent-muted)] text-[var(--accent)] text-sm mb-4">
             <Database size={14} />
-            Local Analysis
+            Data Import
           </div>
           <h1 className="text-3xl font-bold text-[var(--text-primary)]">NetSignal</h1>
           <p className="text-[var(--text-secondary)]">
@@ -256,8 +281,75 @@ export default function ImportPage() {
           </p>
         </div>
 
-        {status === 'idle' || status === 'error' ? (
+        {/* Existing data summary */}
+        {existingData && !showForm && status === 'idle' && (
+          <div className="space-y-4 animate-fade-in">
+            <div className="p-5 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border)] space-y-4">
+              <div className="flex items-center gap-3">
+                <Users size={20} className="text-[var(--accent)]" />
+                <h2 className="font-medium text-[var(--text-primary)]">Current Data</h2>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="p-3 rounded bg-[var(--bg-tertiary)] text-center">
+                  <div className="text-2xl font-bold text-[var(--text-primary)]">{existingData.totalContacts.toLocaleString()}</div>
+                  <div className="text-xs text-[var(--text-tertiary)]">Contacts</div>
+                </div>
+                <div className="p-3 rounded bg-[var(--bg-tertiary)] text-center">
+                  <div className="text-2xl font-bold text-[var(--text-primary)]">{existingData.totalMessages.toLocaleString()}</div>
+                  <div className="text-xs text-[var(--text-tertiary)]">Messages</div>
+                </div>
+                <div className="p-3 rounded bg-[var(--bg-tertiary)] text-center">
+                  <div className="text-2xl font-bold text-[var(--text-primary)]">
+                    {(existingData.tiers?.hot || 0) + (existingData.tiers?.warm || 0) + (existingData.tiers?.cold || 0)}
+                  </div>
+                  <div className="text-xs text-[var(--text-tertiary)]">Scored Leads</div>
+                </div>
+              </div>
+              {existingData.tiers && (
+                <div className="flex gap-4 text-xs text-[var(--text-secondary)]">
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-red-400" />
+                    {existingData.tiers.hot || 0} hot
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-yellow-400" />
+                    {existingData.tiers.warm || 0} warm
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-blue-400" />
+                    {existingData.tiers.cold || 0} cold
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <button
+              onClick={() => setShowForm(true)}
+              className="w-full py-3 rounded-lg font-medium bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white flex items-center justify-center gap-2 transition-all"
+            >
+              <RefreshCw size={16} />
+              Upload Latest Data
+            </button>
+
+            <button
+              onClick={() => router.push('/dashboard')}
+              className="w-full py-2.5 rounded-lg font-medium text-sm border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--border-light)] flex items-center justify-center gap-2 transition-all"
+            >
+              Go to Dashboard
+              <ArrowRight size={14} />
+            </button>
+          </div>
+        )}
+
+        {/* Import form */}
+        {(!existingData || showForm) && (status === 'idle' || status === 'error') && (
           <div className="space-y-6">
+            {showForm && (
+              <p className="text-sm text-[var(--text-secondary)] text-center">
+                This will replace your existing data with a fresh import.
+              </p>
+            )}
+
             <div className="space-y-3">
               <label className="block text-sm font-medium text-[var(--text-secondary)]">Your Name (as it appears on LinkedIn)</label>
               <input
@@ -310,11 +402,23 @@ export default function ImportPage() {
                   ? 'bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white cursor-pointer'
                   : 'bg-[var(--bg-tertiary)] text-[var(--text-tertiary)] cursor-not-allowed'}`}
             >
-              Import & Analyze
+              {showForm ? 'Re-import & Analyze' : 'Import & Analyze'}
               <ArrowRight size={18} />
             </button>
+
+            {showForm && (
+              <button
+                onClick={() => setShowForm(false)}
+                className="w-full py-2 text-sm text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
+              >
+                Cancel
+              </button>
+            )}
           </div>
-        ) : (
+        )}
+
+        {/* Progress / Complete states */}
+        {status !== 'idle' && status !== 'error' && (
           <div className="space-y-6">
             <ImportProgress
               status={status}
@@ -337,7 +441,7 @@ export default function ImportPage() {
         )}
 
         <p className="text-center text-xs text-[var(--text-tertiary)]">
-          Your data is stored securely in the team database.
+          Your data is stored securely and isolated to your account.
         </p>
       </div>
     </div>
