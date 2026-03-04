@@ -1,9 +1,14 @@
 import { NextResponse } from 'next/server';
 import { getSupabase } from '@/lib/db/supabase';
+import { getUserId } from '@/lib/auth/getUserId';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
+  const auth = await getUserId();
+  if ('error' in auth) return auth.error;
+  const userId = auth.userId;
+
   try {
     const supabase = getSupabase();
 
@@ -15,22 +20,23 @@ export async function GET() {
       { data: topLeads },
       { data: messagesPerMonthRaw },
     ] = await Promise.all([
-      supabase.from('ns_contacts').select('*', { count: 'exact', head: true }),
-      supabase.from('ns_messages').select('*', { count: 'exact', head: true }),
-      supabase.from('ns_conversations').select('*', { count: 'exact', head: true }).eq('is_group', false),
-      supabase.from('ns_lead_scores').select('tier'),
+      supabase.from('ns_contacts').select('*', { count: 'exact', head: true }).eq('user_id', userId),
+      supabase.from('ns_messages').select('*', { count: 'exact', head: true }).eq('user_id', userId),
+      supabase.from('ns_conversations').select('*', { count: 'exact', head: true }).eq('user_id', userId).eq('is_group', false),
+      supabase.from('ns_lead_scores').select('tier').eq('user_id', userId),
       supabase
         .from('ns_lead_scores')
         .select('total_score, tier, total_messages, last_message_at, contact_id, ns_contacts(full_name, company, position)')
+        .eq('user_id', userId)
         .order('total_score', { ascending: false })
         .limit(10),
       supabase
         .from('ns_messages')
         .select('sent_at')
+        .eq('user_id', userId)
         .not('sent_at', 'is', null),
     ]);
 
-    // Count tiers in JS
     const tiers: Record<string, number> = { hot: 0, warm: 0, cold: 0 };
     if (tierData) {
       for (const row of tierData) {
@@ -38,15 +44,14 @@ export async function GET() {
       }
     }
 
-    // Calculate recent messages (last 2 years)
     const twoYearsAgo = new Date();
     twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
     const { count: recentMessages } = await supabase
       .from('ns_messages')
       .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId)
       .gte('sent_at', twoYearsAgo.toISOString());
 
-    // Format top leads to match existing shape
     const formattedTopLeads = (topLeads || []).map((lead) => {
       const contact = lead.ns_contacts as unknown as { full_name: string; company: string; position: string } | null;
       return {
@@ -60,10 +65,9 @@ export async function GET() {
       };
     });
 
-    // Aggregate messages per month in JS (last 12 months)
     const twelveMonthsAgo = new Date();
     twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
-    const cutoff = twelveMonthsAgo.toISOString().substring(0, 7); // "YYYY-MM"
+    const cutoff = twelveMonthsAgo.toISOString().substring(0, 7);
 
     const monthCounts = new Map<string, number>();
     if (messagesPerMonthRaw) {

@@ -2,13 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { getSupabase } from '@/lib/db/supabase';
 import { SYSTEM_PROMPT, TOOLS } from '@/lib/chatbot/prompt';
+import { getUserId } from '@/lib/auth/getUserId';
 
-async function getApiKey(): Promise<string | null> {
+async function getApiKey(userId: string): Promise<string | null> {
   try {
     const supabase = getSupabase();
     const { data } = await supabase
       .from('ns_settings')
       .select('value')
+      .eq('user_id', userId)
       .eq('key', 'anthropic_api_key')
       .single();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -18,7 +20,7 @@ async function getApiKey(): Promise<string | null> {
   }
 }
 
-async function executeTool(name: string, input: Record<string, unknown>): Promise<string> {
+async function executeTool(userId: string, name: string, input: Record<string, unknown>): Promise<string> {
   const supabase = getSupabase();
 
   switch (name) {
@@ -35,6 +37,7 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
           last_message_at, reciprocity_score, recency_score,
           ns_contacts!inner(id, full_name, company, position, email)
         `)
+        .eq('user_id', userId)
         .order('total_score', { ascending: false })
         .limit(limit);
 
@@ -50,7 +53,6 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
 
       const { data } = await q;
 
-      // Flatten for the LLM
       const results = (data || []).map(row => {
         const c = row.ns_contacts as unknown as {
           id: number; full_name: string; company: string; position: string; email: string;
@@ -79,17 +81,16 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
       const query = input.query as string;
       const limit = (input.limit as number) || 20;
 
-      // Use Postgres full-text search via textSearch
       const { data } = await supabase
         .from('ns_messages')
         .select(`
           content, sender_name, sent_at, is_from_user,
           ns_conversations!inner(contact_id, ns_contacts(full_name, company))
         `)
+        .eq('user_id', userId)
         .textSearch('content', query, { type: 'websearch' })
         .limit(limit);
 
-      // Flatten
       const results = (data || []).map(row => {
         const conv = row.ns_conversations as unknown as {
           contact_id: number;
@@ -126,6 +127,7 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
             )
           `)
           .eq('id', contactId)
+          .eq('user_id', userId)
           .single();
         contactData = data;
       } else if (name) {
@@ -139,6 +141,7 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
               total_messages, user_messages, contact_messages, last_message_at
             )
           `)
+          .eq('user_id', userId)
           .ilike('full_name', `%${name}%`)
           .limit(1)
           .single();
@@ -147,7 +150,6 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
 
       if (!contactData) return JSON.stringify({ error: 'Contact not found' });
 
-      // Flatten lead_scores into contact
       const ls = Array.isArray(contactData.ns_lead_scores)
         ? (contactData.ns_lead_scores as Record<string, unknown>[])[0]
         : contactData.ns_lead_scores as Record<string, unknown> | null;
@@ -155,10 +157,10 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
       const contact = { ...contactData, ...ls };
       delete contact.ns_lead_scores;
 
-      // Get recent messages
       const { data: convs } = await supabase
         .from('ns_conversations')
         .select('id')
+        .eq('user_id', userId)
         .eq('contact_id', contact.id as number);
 
       const convIds = (convs || []).map(c => c.id);
@@ -168,6 +170,7 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
         const { data: msgs } = await supabase
           .from('ns_messages')
           .select('content, sender_name, sent_at, is_from_user')
+          .eq('user_id', userId)
           .in('conversation_id', convIds)
           .order('sent_at', { ascending: false })
           .limit(5);
@@ -187,9 +190,9 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
             { count: totalMessages },
             { data: tierData },
           ] = await Promise.all([
-            supabase.from('ns_contacts').select('*', { count: 'exact', head: true }),
-            supabase.from('ns_messages').select('*', { count: 'exact', head: true }),
-            supabase.from('ns_lead_scores').select('tier, total_score'),
+            supabase.from('ns_contacts').select('*', { count: 'exact', head: true }).eq('user_id', userId),
+            supabase.from('ns_messages').select('*', { count: 'exact', head: true }).eq('user_id', userId),
+            supabase.from('ns_lead_scores').select('tier, total_score').eq('user_id', userId),
           ]);
 
           const tiers: Record<string, number> = {};
@@ -211,6 +214,7 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
           const { data } = await supabase
             .from('ns_lead_scores')
             .select('total_score, tier, total_messages, ns_contacts!inner(full_name, company, position)')
+            .eq('user_id', userId)
             .order('total_score', { ascending: false })
             .limit(20);
 
@@ -232,10 +236,10 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
           const { data } = await supabase
             .from('ns_lead_scores')
             .select('total_score, ns_contacts!inner(company)')
+            .eq('user_id', userId)
             .not('ns_contacts.company', 'is', null)
             .not('ns_contacts.company', 'eq', '');
 
-          // Aggregate in JS
           const companyMap = new Map<string, { count: number; totalScore: number; topScore: number }>();
           for (const row of data || []) {
             const c = row.ns_contacts as unknown as { company: string };
@@ -263,6 +267,7 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
           const { data } = await supabase
             .from('ns_messages')
             .select('content, sent_at, is_from_user, ns_conversations!inner(ns_contacts(full_name, company))')
+            .eq('user_id', userId)
             .order('sent_at', { ascending: false })
             .limit(20);
 
@@ -285,6 +290,7 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
           const { data } = await supabase
             .from('ns_messages')
             .select('signal_words_found, content, sent_at, ns_conversations!inner(ns_contacts(full_name, company))')
+            .eq('user_id', userId)
             .eq('has_signal_words', true)
             .order('sent_at', { ascending: false })
             .limit(30);
@@ -315,7 +321,11 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
 }
 
 export async function POST(req: NextRequest) {
-  const apiKey = await getApiKey();
+  const auth = await getUserId();
+  if ('error' in auth) return auth.error;
+  const userId = auth.userId;
+
+  const apiKey = await getApiKey(userId);
   if (!apiKey) {
     return NextResponse.json(
       { error: 'No API key configured. Set your Anthropic API key in Settings.' },
@@ -327,13 +337,11 @@ export async function POST(req: NextRequest) {
     const { messages } = await req.json();
     const client = new Anthropic({ apiKey });
 
-    // Convert to Anthropic message format
     const anthropicMessages: Anthropic.MessageParam[] = messages.map((m: { role: string; content: string }) => ({
       role: m.role as 'user' | 'assistant',
       content: m.content,
     }));
 
-    // Create a streaming response with tool use loop
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       async start(controller) {
@@ -350,14 +358,13 @@ export async function POST(req: NextRequest) {
           });
 
           if (response.stop_reason === 'tool_use') {
-            // Process tool calls
             const toolUseBlocks = response.content.filter(
               (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use'
             );
 
             const toolResults: Anthropic.ToolResultBlockParam[] = [];
             for (const block of toolUseBlocks) {
-              const result = await executeTool(block.name, block.input as Record<string, unknown>);
+              const result = await executeTool(userId, block.name, block.input as Record<string, unknown>);
               toolResults.push({
                 type: 'tool_result' as const,
                 tool_use_id: block.id,
@@ -371,7 +378,6 @@ export async function POST(req: NextRequest) {
               { role: 'user', content: toolResults },
             ];
           } else {
-            // Extract text and stream it
             for (const block of response.content) {
               if (block.type === 'text') {
                 const chunk = `data: ${JSON.stringify({ text: block.text })}\n\n`;
@@ -404,9 +410,13 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE() {
+  const auth = await getUserId();
+  if ('error' in auth) return auth.error;
+  const userId = auth.userId;
+
   try {
     const supabase = getSupabase();
-    await supabase.from('ns_chat_history').delete().neq('id', -1);
+    await supabase.from('ns_chat_history').delete().eq('user_id', userId);
     return NextResponse.json({ success: true });
   } catch {
     return NextResponse.json({ success: true });

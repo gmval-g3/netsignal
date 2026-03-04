@@ -1,26 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabase } from '@/lib/db/supabase';
+import { getUserId } from '@/lib/auth/getUserId';
 
 // GET: export all matching filters
 export async function GET(req: NextRequest) {
+  const auth = await getUserId();
+  if ('error' in auth) return auth.error;
+
   const url = new URL(req.url);
   const tiers = url.searchParams.get('tiers');
 
-  return buildCsv(tiers ? { tiers } : {}, `linkedin-leads-${tiers || 'all'}`);
+  return buildCsv(auth.userId, tiers ? { tiers } : {}, `linkedin-leads-${tiers || 'all'}`);
 }
 
 // POST: export specific IDs
 export async function POST(req: NextRequest) {
+  const auth = await getUserId();
+  if ('error' in auth) return auth.error;
+
   const { ids } = await req.json();
 
   if (!ids?.length) {
     return NextResponse.json({ error: 'No IDs provided' }, { status: 400 });
   }
 
-  return buildCsv({ ids }, 'linkedin-leads-selected');
+  return buildCsv(auth.userId, { ids }, 'linkedin-leads-selected');
 }
 
 async function buildCsv(
+  userId: string,
   filters: { tiers?: string; ids?: number[] },
   filenamePrefix: string
 ) {
@@ -36,6 +44,7 @@ async function buildCsv(
         last_message_at, last_message_preview,
         ns_contacts!inner(id, full_name, first_name, last_name, email, company, position, linkedin_url, connected_on)
       `)
+      .eq('user_id', userId)
       .order('total_score', { ascending: false });
 
     if (filters.ids) {
@@ -54,7 +63,6 @@ async function buildCsv(
       return NextResponse.json({ error: 'No leads to export' }, { status: 404 });
     }
 
-    // Fetch all contact-tag mappings for these contacts
     const contactIds = data.map(row => {
       const contact = row.ns_contacts as unknown as { id: number };
       return contact.id;
@@ -63,9 +71,9 @@ async function buildCsv(
     const { data: tagMappings } = await supabase
       .from('ns_contact_tags')
       .select('contact_id, ns_tags(name)')
+      .eq('user_id', userId)
       .in('contact_id', contactIds);
 
-    // Build tag lookup: contact_id -> "tag1; tag2"
     const tagsByContact = new Map<number, string>();
     if (tagMappings) {
       for (const mapping of tagMappings) {

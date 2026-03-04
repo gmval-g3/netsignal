@@ -1,12 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabase } from '@/lib/db/supabase';
+import { getUserId } from '@/lib/auth/getUserId';
 
 export async function GET(req: NextRequest) {
+  const auth = await getUserId();
+  if ('error' in auth) return auth.error;
+  const userId = auth.userId;
+
   try {
     const supabase = getSupabase();
     const url = new URL(req.url);
 
-    const tiers = url.searchParams.get('tiers'); // comma-separated: "hot,warm"
+    const tiers = url.searchParams.get('tiers');
     const search = url.searchParams.get('search');
     const tag = url.searchParams.get('tag');
     const sort = url.searchParams.get('sort') || 'total_score';
@@ -21,8 +26,6 @@ export async function GET(req: NextRequest) {
     const sortCol = allowedSorts.includes(sort) ? sort : 'total_score';
     const ascending = order === 'asc';
 
-    // We need to join lead_scores with contacts. Use lead_scores as base.
-    // Supabase foreign-key join: lead_scores has contact_id -> contacts(id)
     let query = supabase
       .from('ns_lead_scores')
       .select(`
@@ -32,9 +35,9 @@ export async function GET(req: NextRequest) {
         total_messages, user_messages, contact_messages,
         last_message_at, last_message_preview,
         ns_contacts!inner(id, full_name, company, position, email, linkedin_url)
-      `);
+      `)
+      .eq('user_id', userId);
 
-    // Tier filter
     if (tiers && tiers !== 'all') {
       const tierList = tiers.split(',').filter(Boolean);
       if (tierList.length > 0) {
@@ -42,31 +45,27 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Min messages filter
     if (minMessages) {
       query = query.gte('total_messages', parseInt(minMessages));
     }
 
-    // Date range filter
     if (sinceDate) {
       query = query.gte('last_message_at', sinceDate);
     }
 
-    // Search: name, company, position
     if (search) {
-      // Use or() filter on the joined contacts table for name/company/position
       query = query.or(
         `full_name.ilike.%${search}%,company.ilike.%${search}%,position.ilike.%${search}%`,
         { referencedTable: 'ns_contacts' }
       );
     }
 
-    // Tag filter: get contact IDs with this tag first, then filter
     let tagContactIds: number[] | null = null;
     if (tag) {
       const { data: tagMappings } = await supabase
         .from('ns_contact_tags')
         .select('contact_id')
+        .eq('user_id', userId)
         .eq('tag_id', parseInt(tag));
       tagContactIds = (tagMappings || []).map(t => t.contact_id);
       if (tagContactIds.length === 0) {
@@ -75,23 +74,21 @@ export async function GET(req: NextRequest) {
       query = query.in('contact_id', tagContactIds);
     }
 
-    // Sort — for full_name we sort via the referenced table
     if (sortCol === 'full_name') {
       query = query.order('full_name', { referencedTable: 'ns_contacts', ascending });
     } else {
       query = query.order(sortCol, { ascending });
     }
 
-    // Pagination
     query = query.range(offset, offset + limit - 1);
 
     const { data, error } = await query;
     if (error) throw error;
 
-    // Also get total count with same filters
     let countQuery = supabase
       .from('ns_lead_scores')
-      .select('contact_id, ns_contacts!inner(id, full_name, company, position)', { count: 'exact', head: true });
+      .select('contact_id, ns_contacts!inner(id, full_name, company, position)', { count: 'exact', head: true })
+      .eq('user_id', userId);
 
     if (tiers && tiers !== 'all') {
       const tierList = tiers.split(',').filter(Boolean);
@@ -117,25 +114,23 @@ export async function GET(req: NextRequest) {
 
     const { count: total } = await countQuery;
 
-    // Flatten the joined shape to match existing API contract
     const contactIds = (data || []).map(row => {
       const contact = row.ns_contacts as unknown as { id: number };
       return contact.id;
     });
 
-    // Fetch enrichment data for these contacts
     const enrichedMap = new Map<number, { current_title: string | null; current_company: string | null; headline: string | null; company_url: string | null; location: string | null }>();
     if (contactIds.length > 0) {
       const { data: enriched } = await supabase
         .from('ns_enriched_contacts')
         .select('contact_id, current_title, current_company, headline, company_url, location')
+        .eq('user_id', userId)
         .in('contact_id', contactIds);
       for (const e of enriched || []) {
         enrichedMap.set(e.contact_id, e);
       }
     }
 
-    // Fetch company revenue enrichment data
     const companyNames = new Set<string>();
     for (const row of data || []) {
       const contact = row.ns_contacts as unknown as { company: string };

@@ -1,11 +1,28 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { BarChart3, Settings, Upload } from 'lucide-react';
+import { usePathname, useRouter } from 'next/navigation';
+import { BarChart3, Settings, Upload, LogOut } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { createBrowserSupabase } from '@/lib/db/client';
 
 export default function TopNav() {
   const pathname = usePathname();
+  const router = useRouter();
+  const [email, setEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    const supabase = createBrowserSupabase();
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      setEmail(user?.email ?? null);
+    });
+  }, []);
+
+  async function handleLogout() {
+    const supabase = createBrowserSupabase();
+    await supabase.auth.signOut();
+    router.push('/login');
+  }
 
   return (
     <header className="h-12 border-b border-[var(--border)] bg-[var(--bg-secondary)] flex items-center px-4 gap-6">
@@ -42,6 +59,20 @@ export default function TopNav() {
           Settings
         </Link>
       </nav>
+
+      <div className="ml-auto flex items-center gap-3">
+        {email && (
+          <span className="text-xs text-[var(--text-tertiary)]">{email}</span>
+        )}
+        <button
+          onClick={handleLogout}
+          className="flex items-center gap-1.5 px-2 py-1 rounded text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors"
+          title="Sign out"
+        >
+          <LogOut size={14} />
+          Sign out
+        </button>
+      </div>
     </header>
   );
 }

@@ -1,15 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { getSupabase } from '@/lib/db/supabase';
+import { getUserId } from '@/lib/auth/getUserId';
 
 export const dynamic = 'force-dynamic';
 
-async function getApiKey(): Promise<string | null> {
+async function getApiKey(userId: string): Promise<string | null> {
   try {
     const supabase = getSupabase();
     const { data } = await supabase
       .from('ns_settings')
       .select('value')
+      .eq('user_id', userId)
       .eq('key', 'anthropic_api_key')
       .single();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -29,8 +31,12 @@ interface CompanyEstimate {
 }
 
 export async function POST(req: NextRequest) {
+  const auth = await getUserId();
+  if ('error' in auth) return auth.error;
+  const userId = auth.userId;
+
   try {
-    const apiKey = await getApiKey();
+    const apiKey = await getApiKey(userId);
     if (!apiKey) {
       return NextResponse.json(
         { error: 'No Anthropic API key configured. Add one in Settings or set ANTHROPIC_API_KEY.' },
@@ -45,11 +51,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No company names provided' }, { status: 400 });
     }
 
-    // Deduplicate and normalize
     const unique = [...new Set(companyNames.map((n: string) => n.trim()).filter(Boolean))];
     const normalized = unique.map(n => n.toLowerCase());
 
-    // Check which already exist
+    // Company enrichment is shared (no user_id scoping)
     const { data: existing } = await supabase
       .from('ns_company_enrichment')
       .select('company_name')
@@ -65,7 +70,6 @@ export async function POST(req: NextRequest) {
     const anthropic = new Anthropic({ apiKey });
     let totalEnriched = 0;
 
-    // Process in batches of 20
     for (let i = 0; i < toEnrich.length; i += 20) {
       const batch = toEnrich.slice(i, i + 20);
       const companyList = batch.map((name, idx) => `${idx + 1}. ${name}`).join('\n');
@@ -92,16 +96,13 @@ Return JSON array only:`
         }],
       });
 
-      // Parse response
       const text = response.content[0].type === 'text' ? response.content[0].text : '';
       try {
-        // Extract JSON from response (handle markdown code blocks)
         const jsonMatch = text.match(/\[[\s\S]*\]/);
         if (!jsonMatch) continue;
 
         const estimates: CompanyEstimate[] = JSON.parse(jsonMatch[0]);
 
-        // Upsert each company
         for (const est of estimates) {
           if (!est.company_name) continue;
           await supabase

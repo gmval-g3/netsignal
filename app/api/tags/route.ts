@@ -1,13 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabase } from '@/lib/db/supabase';
+import { getUserId } from '@/lib/auth/getUserId';
 
 // GET all tags
 export async function GET() {
+  const auth = await getUserId();
+  if ('error' in auth) return auth.error;
+  const userId = auth.userId;
+
   try {
     const supabase = getSupabase();
     const { data: tags } = await supabase
       .from('ns_tags')
       .select('*')
+      .eq('user_id', userId)
       .order('name');
 
     return NextResponse.json(tags || []);
@@ -18,6 +24,10 @@ export async function GET() {
 
 // POST create a new tag
 export async function POST(req: NextRequest) {
+  const auth = await getUserId();
+  if ('error' in auth) return auth.error;
+  const userId = auth.userId;
+
   try {
     const supabase = getSupabase();
     const { name, color } = await req.json();
@@ -25,12 +35,11 @@ export async function POST(req: NextRequest) {
 
     const { data: tag, error } = await supabase
       .from('ns_tags')
-      .insert({ name: name.trim(), color: color || '#6366f1' })
+      .insert({ user_id: userId, name: name.trim(), color: color || '#6366f1' })
       .select()
       .single();
 
     if (error) {
-      // Unique constraint violation = tag already exists
       if (error.code === '23505') {
         return NextResponse.json({ error: 'Tag already exists' }, { status: 409 });
       }
@@ -45,13 +54,16 @@ export async function POST(req: NextRequest) {
 
 // DELETE a tag
 export async function DELETE(req: NextRequest) {
+  const auth = await getUserId();
+  if ('error' in auth) return auth.error;
+  const userId = auth.userId;
+
   try {
     const supabase = getSupabase();
     const { id } = await req.json();
 
-    // Remove tag from all contacts first, then delete the tag
-    await supabase.from('ns_contact_tags').delete().eq('tag_id', id);
-    await supabase.from('ns_tags').delete().eq('id', id);
+    await supabase.from('ns_contact_tags').delete().eq('user_id', userId).eq('tag_id', id);
+    await supabase.from('ns_tags').delete().eq('user_id', userId).eq('id', id);
 
     return NextResponse.json({ success: true });
   } catch {

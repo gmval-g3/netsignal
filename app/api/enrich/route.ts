@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabase } from '@/lib/db/supabase';
+import { getUserId } from '@/lib/auth/getUserId';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,7 +34,6 @@ async function enrichContact(linkedinUrl: string): Promise<{
   connections: number | null;
   followers: number | null;
 } | null> {
-  // Extract username from LinkedIn URL
   const match = linkedinUrl.match(/linkedin\.com\/in\/([^/?]+)/);
   if (!match) return null;
   const username = match[1];
@@ -68,6 +68,10 @@ async function enrichContact(linkedinUrl: string): Promise<{
 
 // POST: Enrich selected contacts
 export async function POST(req: NextRequest) {
+  const auth = await getUserId();
+  if ('error' in auth) return auth.error;
+  const userId = auth.userId;
+
   try {
     if (!RAPIDAPI_KEY) {
       return NextResponse.json(
@@ -83,13 +87,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No contact IDs provided' }, { status: 400 });
     }
 
-    // Cap at 25 per request to avoid timeouts
     const ids = contactIds.slice(0, 25);
 
-    // Get LinkedIn URLs for these contacts
     const { data: contacts } = await supabase
       .from('ns_contacts')
       .select('id, linkedin_url')
+      .eq('user_id', userId)
       .in('id', ids)
       .not('linkedin_url', 'is', null);
 
@@ -101,7 +104,6 @@ export async function POST(req: NextRequest) {
       success: 0, failed: 0, skipped: 0,
     };
 
-    // Process contacts sequentially to avoid rate limits
     for (const contact of contacts) {
       if (!contact.linkedin_url) {
         results.skipped++;
@@ -115,9 +117,10 @@ export async function POST(req: NextRequest) {
             .from('ns_enriched_contacts')
             .upsert({
               contact_id: contact.id,
+              user_id: userId,
               ...enrichData,
               enriched_at: new Date().toISOString(),
-            }, { onConflict: 'contact_id' });
+            }, { onConflict: 'user_id,contact_id' });
           results.success++;
         } else {
           results.failed++;
@@ -139,6 +142,10 @@ export async function POST(req: NextRequest) {
 
 // GET: Get enrichment status for contacts
 export async function GET(req: NextRequest) {
+  const auth = await getUserId();
+  if ('error' in auth) return auth.error;
+  const userId = auth.userId;
+
   try {
     const supabase = getSupabase();
     const url = new URL(req.url);
@@ -149,14 +156,15 @@ export async function GET(req: NextRequest) {
       const { data } = await supabase
         .from('ns_enriched_contacts')
         .select('*')
+        .eq('user_id', userId)
         .in('contact_id', ids);
       return NextResponse.json(data || []);
     }
 
-    // Return all enriched contact IDs
     const { data } = await supabase
       .from('ns_enriched_contacts')
-      .select('contact_id, enriched_at');
+      .select('contact_id, enriched_at')
+      .eq('user_id', userId);
     return NextResponse.json(data || []);
   } catch {
     return NextResponse.json([]);

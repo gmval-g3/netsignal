@@ -1,16 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabase } from '@/lib/db/supabase';
+import { getUserId } from '@/lib/auth/getUserId';
 
 export async function GET(
   _req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const auth = await getUserId();
+  if ('error' in auth) return auth.error;
+  const userId = auth.userId;
+
   try {
     const { id } = params;
     const supabase = getSupabase();
     const contactId = parseInt(id);
 
-    // Get contact with lead score data
     const { data: contactData, error: contactError } = await supabase
       .from('ns_contacts')
       .select(`
@@ -22,13 +26,13 @@ export async function GET(
         )
       `)
       .eq('id', contactId)
+      .eq('user_id', userId)
       .single();
 
     if (contactError || !contactData) {
       return NextResponse.json({ error: 'Contact not found' }, { status: 404 });
     }
 
-    // Flatten the contact + lead_scores into a single object to match existing shape
     const leadScore = Array.isArray(contactData.ns_lead_scores)
       ? contactData.ns_lead_scores[0]
       : contactData.ns_lead_scores;
@@ -49,14 +53,13 @@ export async function GET(
     };
     delete (contact as Record<string, unknown>).ns_lead_scores;
 
-    // Get all conversations for this contact
     const { data: conversations } = await supabase
       .from('ns_conversations')
       .select('id, message_count, first_message_at, last_message_at, is_group')
+      .eq('user_id', userId)
       .eq('contact_id', contactId)
       .order('last_message_at', { ascending: false });
 
-    // Get all messages across conversations for this contact
     const convIds = (conversations || []).map(c => c.id);
     let messages: unknown[] = [];
 
@@ -64,6 +67,7 @@ export async function GET(
       const { data: msgData } = await supabase
         .from('ns_messages')
         .select('sender_name, content, sent_at, is_from_user, has_signal_words, signal_words_found')
+        .eq('user_id', userId)
         .in('conversation_id', convIds)
         .order('sent_at', { ascending: false })
         .limit(100);
@@ -71,10 +75,10 @@ export async function GET(
       messages = msgData || [];
     }
 
-    // Get enrichment data if available
     const { data: enrichmentData } = await supabase
       .from('ns_enriched_contacts')
       .select('*')
+      .eq('user_id', userId)
       .eq('contact_id', contactId)
       .single();
 

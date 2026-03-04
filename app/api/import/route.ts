@@ -1,15 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabase } from '@/lib/db/supabase';
 import { runScoring, ConversationRow, MessageRow } from '@/lib/scoring';
+import { getUserId } from '@/lib/auth/getUserId';
 
 // PUT: Run scoring on all imported data
 export async function PUT() {
+  const auth = await getUserId();
+  if ('error' in auth) return auth.error;
+  const userId = auth.userId;
+
   try {
     const supabase = getSupabase();
 
     const { data: conversations, error: convError } = await supabase
       .from('ns_conversations')
       .select('id, contact_id, is_group, first_message_at, last_message_at, message_count')
+      .eq('user_id', userId)
       .not('contact_id', 'is', null);
 
     if (convError) throw convError;
@@ -32,6 +38,7 @@ export async function PUT() {
       const { data: msgs, error: msgError } = await supabase
         .from('ns_messages')
         .select('conversation_id, content, is_from_user, sent_at, has_signal_words, signal_words_found')
+        .eq('user_id', userId)
         .in('conversation_id', batch)
         .order('sent_at', { ascending: true });
 
@@ -50,13 +57,14 @@ export async function PUT() {
 
     const { scores, tiers } = runScoring(convRows, allMessages);
 
-    await supabase.from('ns_lead_scores').delete().neq('contact_id', -1);
+    await supabase.from('ns_lead_scores').delete().eq('user_id', userId);
 
-    for (let i = 0; i < scores.length; i += 500) {
-      const batch = scores.slice(i, i + 500);
+    const scoredRows = scores.map(s => ({ ...s, user_id: userId }));
+    for (let i = 0; i < scoredRows.length; i += 500) {
+      const batch = scoredRows.slice(i, i + 500);
       const { error: upsertError } = await supabase
         .from('ns_lead_scores')
-        .upsert(batch, { onConflict: 'contact_id' });
+        .upsert(batch, { onConflict: 'user_id,contact_id' });
       if (upsertError) throw upsertError;
     }
 
@@ -72,32 +80,36 @@ export async function PUT() {
 
 // POST: Batched import operations (called multiple times from client)
 export async function POST(req: NextRequest) {
+  const auth = await getUserId();
+  if ('error' in auth) return auth.error;
+  const userId = auth.userId;
+
   try {
     const supabase = getSupabase();
     const body = await req.json();
 
     switch (body.action) {
       case 'clear': {
-        // Clear all data and save settings
-        await supabase.from('ns_messages').delete().neq('id', -1);
-        await supabase.from('ns_lead_scores').delete().neq('contact_id', -1);
-        await supabase.from('ns_conversations').delete().neq('id', '');
-        await supabase.from('ns_contact_tags').delete().neq('contact_id', -1);
-        await supabase.from('ns_contacts').delete().neq('id', -1);
-        await supabase.from('ns_chat_history').delete().neq('id', -1);
+        // Clear all data for this user
+        await supabase.from('ns_messages').delete().eq('user_id', userId);
+        await supabase.from('ns_lead_scores').delete().eq('user_id', userId);
+        await supabase.from('ns_conversations').delete().eq('user_id', userId);
+        await supabase.from('ns_contact_tags').delete().eq('user_id', userId);
+        await supabase.from('ns_enriched_contacts').delete().eq('user_id', userId);
+        await supabase.from('ns_contacts').delete().eq('user_id', userId);
+        await supabase.from('ns_chat_history').delete().eq('user_id', userId);
 
         if (body.userName || body.userUrl) {
           await supabase.from('ns_settings').upsert([
-            { key: 'user_name', value: body.userName || '' },
-            { key: 'user_url', value: body.userUrl || '' },
-          ], { onConflict: 'key' });
+            { user_id: userId, key: 'user_name', value: body.userName || '' },
+            { user_id: userId, key: 'user_url', value: body.userUrl || '' },
+          ], { onConflict: 'user_id,key' });
         }
 
         return NextResponse.json({ success: true });
       }
 
       case 'contacts': {
-        // Upsert a batch of contacts
         const rows = body.batch as Array<{
           full_name: string; first_name: string | null; last_name: string | null;
           linkedin_url: string | null; email: string | null;
@@ -105,9 +117,10 @@ export async function POST(req: NextRequest) {
         }>;
 
         if (rows.length > 0) {
+          const rowsWithUser = rows.map(r => ({ ...r, user_id: userId }));
           const { error } = await supabase
             .from('ns_contacts')
-            .upsert(rows, { onConflict: 'linkedin_url', ignoreDuplicates: true });
+            .upsert(rowsWithUser, { onConflict: 'user_id,linkedin_url', ignoreDuplicates: true });
           if (error) throw error;
         }
 
@@ -115,10 +128,10 @@ export async function POST(req: NextRequest) {
       }
 
       case 'lookup': {
-        // Return contact id→url map for client-side resolution
         const { data, error } = await supabase
           .from('ns_contacts')
           .select('id, linkedin_url')
+          .eq('user_id', userId)
           .not('linkedin_url', 'is', null);
         if (error) throw error;
 
@@ -130,7 +143,6 @@ export async function POST(req: NextRequest) {
       }
 
       case 'conversations': {
-        // Bulk insert conversations + messages
         const items = body.batch as Array<{
           id: string;
           contact_id: number | null;
@@ -145,9 +157,9 @@ export async function POST(req: NextRequest) {
           }>;
         }>;
 
-        // Bulk insert all conversations at once
         const convRows = items.map(conv => ({
           id: conv.id,
+          user_id: userId,
           contact_id: conv.contact_id,
           is_group: conv.is_group,
           message_count: conv.message_count,
@@ -157,14 +169,13 @@ export async function POST(req: NextRequest) {
 
         const { error: convError } = await supabase
           .from('ns_conversations')
-          .upsert(convRows, { onConflict: 'id', ignoreDuplicates: true });
+          .upsert(convRows, { onConflict: 'user_id,id', ignoreDuplicates: true });
         if (convError) throw convError;
 
-        // Collect all messages and bulk insert
         const allMsgRows: Array<Record<string, unknown>> = [];
         for (const conv of items) {
           for (const m of conv.messages) {
-            allMsgRows.push({ conversation_id: conv.id, ...m });
+            allMsgRows.push({ conversation_id: conv.id, user_id: userId, ...m });
           }
         }
 
