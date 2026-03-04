@@ -44,7 +44,7 @@ type ColumnKey = 'location' | 'revenue' | 'employees' | 'industry' | 'headline' 
 const ALL_COLUMNS: { key: ColumnKey; label: string; default: boolean }[] = [
   { key: 'location', label: 'Location', default: true },
   { key: 'revenue', label: 'Revenue', default: true },
-  { key: 'employees', label: 'Employees', default: false },
+  { key: 'employees', label: 'Employees', default: true },
   { key: 'industry', label: 'Industry', default: false },
   { key: 'headline', label: 'Headline', default: false },
   { key: 'email', label: 'Email', default: false },

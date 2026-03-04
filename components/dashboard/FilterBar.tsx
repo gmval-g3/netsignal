@@ -139,8 +139,9 @@ export default function FilterBar({ search, onSearchChange, activeTiers, onTiers
 
   return (
     <>
-      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-        <div className="relative flex-1 w-full sm:max-w-xs">
+      {/* Row 1: Search, tiers, sort, info, count */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative w-full sm:w-auto sm:min-w-[240px]">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]" />
           <input
             type="text"
@@ -152,7 +153,6 @@ export default function FilterBar({ search, onSearchChange, activeTiers, onTiers
         </div>
 
         <div className="flex items-center gap-2">
-          {/* All button */}
           <button
             onClick={() => onTiersChange(['hot', 'warm', 'cold'])}
             className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${
@@ -164,7 +164,6 @@ export default function FilterBar({ search, onSearchChange, activeTiers, onTiers
             All
           </button>
 
-          {/* Tier toggle buttons */}
           {TIERS.map((t) => {
             const active = activeTiers.includes(t.value);
             return (

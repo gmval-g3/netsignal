@@ -20,18 +20,29 @@ export async function POST(req: NextRequest) {
 
     if (action === 'remove') {
       for (const cid of ids) {
-        await supabase
+        const { error } = await supabase
           .from('ns_contact_tags')
           .delete()
           .eq('user_id', userId)
           .eq('contact_id', cid)
           .eq('tag_id', tagId);
+        if (error) {
+          console.error('Tag remove error:', error);
+          return NextResponse.json({ error: error.message }, { status: 500 });
+        }
       }
     } else {
-      const rows = ids.map(cid => ({ user_id: userId, contact_id: cid, tag_id: tagId }));
-      await supabase
-        .from('ns_contact_tags')
-        .upsert(rows, { onConflict: 'user_id,contact_id,tag_id', ignoreDuplicates: true });
+      for (const cid of ids) {
+        const { error } = await supabase
+          .from('ns_contact_tags')
+          .insert({ user_id: userId, contact_id: cid, tag_id: tagId });
+        if (error) {
+          // Ignore duplicate key errors (already tagged)
+          if (error.code === '23505') continue;
+          console.error('Tag apply error:', { error, userId, contactId: cid, tagId });
+          return NextResponse.json({ error: error.message }, { status: 500 });
+        }
+      }
     }
 
     return NextResponse.json({ success: true });
