@@ -5,5 +5,8 @@
 [build.environment]
   SECRETS_SCAN_OMIT_KEYS = "NEXT_PUBLIC_SUPABASE_ANON_KEY,NEXT_PUBLIC_SUPABASE_URL"
 
+[functions]
+  external_node_modules = ["@supabase/ssr", "@supabase/supabase-js"]
+
 [[plugins]]
   package = "@netlify/plugin-nextjs"

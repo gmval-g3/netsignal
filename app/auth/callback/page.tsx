@@ -1,12 +1,9 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import { createBrowserSupabase } from '@/lib/db/client';
 
 export default function AuthCallback() {
-  const router = useRouter();
-
   useEffect(() => {
     const supabase = createBrowserSupabase();
 
@@ -18,7 +15,7 @@ export default function AuthCallback() {
         const { error } = await supabase.auth.exchangeCodeForSession(code);
         if (error) {
           console.error('Auth callback error:', error.message);
-          router.replace('/login?error=auth_failed');
+          window.location.href = '/login?error=auth_failed';
           return;
         }
       }
@@ -26,14 +23,15 @@ export default function AuthCallback() {
       // Check session (handles both PKCE code exchange and implicit hash flow)
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        router.replace('/');
+        // Full page navigation to ensure auth cookies are sent to middleware
+        window.location.href = '/';
       } else {
-        router.replace('/login?error=auth_failed');
+        window.location.href = '/login?error=auth_failed';
       }
     };
 
     handleCallback();
-  }, [router]);
+  }, []);
 
   return (
     <div className="flex items-center justify-center min-h-screen"

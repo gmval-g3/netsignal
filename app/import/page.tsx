@@ -10,6 +10,15 @@ import { parseConnections } from '@/lib/parsers/connections';
 
 type ImportStatus = 'idle' | 'uploading' | 'processing' | 'scoring' | 'complete' | 'error';
 
+async function safeJson(res: Response): Promise<Record<string, unknown>> {
+  try {
+    const text = await res.text();
+    return text ? JSON.parse(text) : {};
+  } catch {
+    return {};
+  }
+}
+
 export default function ImportPage() {
   const router = useRouter();
   const [messagesFile, setMessagesFile] = useState<File | null>(null);
@@ -28,8 +37,8 @@ export default function ImportPage() {
 
   useEffect(() => {
     Promise.all([
-      fetch('/api/stats').then(r => r.json()),
-      fetch('/api/settings').then(r => r.json()),
+      fetch('/api/stats').then(r => safeJson(r)),
+      fetch('/api/settings').then(r => safeJson(r)),
     ]).then(([statsData, settings]) => {
       if (statsData.totalContacts > 0) {
         setExistingData(statsData);
@@ -86,7 +95,7 @@ export default function ImportPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'refresh', userName, userUrl }),
         });
-        if (!refreshRes.ok) throw new Error((await refreshRes.json()).error || 'Refresh init failed');
+        if (!refreshRes.ok) throw new Error(((await safeJson(refreshRes)).error as string) || 'Refresh init failed');
       } else {
         setProgress('Clearing existing data...');
         const clearRes = await fetch('/api/import', {
@@ -94,7 +103,7 @@ export default function ImportPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'clear', userName, userUrl }),
         });
-        if (!clearRes.ok) throw new Error((await clearRes.json()).error || 'Clear failed');
+        if (!clearRes.ok) throw new Error(((await safeJson(clearRes)).error as string) || 'Clear failed');
       }
 
       // --- Step 3: Upload contacts in batches ---
@@ -108,7 +117,7 @@ export default function ImportPage() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'contacts', batch, mode }),
           });
-          if (!res.ok) throw new Error((await res.json()).error || 'Contact import failed');
+          if (!res.ok) throw new Error(((await safeJson(res)).error as string) || 'Contact import failed');
         }
       }
 
@@ -161,7 +170,7 @@ export default function ImportPage() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'contacts', batch, mode }),
           });
-          if (!res.ok) throw new Error((await res.json()).error || 'Contact import failed');
+          if (!res.ok) throw new Error(((await safeJson(res)).error as string) || 'Contact import failed');
         }
       }
 
@@ -173,11 +182,11 @@ export default function ImportPage() {
         body: JSON.stringify({ action: 'lookup' }),
       });
       if (!lookupRes.ok) throw new Error('Contact lookup failed');
-      const contactIdMap: Record<string, number> = await lookupRes.json();
+      const contactIdMap = (await safeJson(lookupRes)) as Record<string, number>;
 
       // --- Step 6: Prepare and send conversations in batches ---
       const convEntries = Array.from(conversationMap.entries());
-      const convBatchSize = 200;
+      const convBatchSize = 50;
       let messageCount = 0;
       let conversationCount = 0;
 
@@ -245,8 +254,8 @@ export default function ImportPage() {
           body: JSON.stringify({ action: 'conversations', batch, mode }),
         });
         if (!res.ok) {
-          const errData = await res.json();
-          throw new Error(errData.error || 'Conversation import failed');
+          const errData = await safeJson(res);
+          throw new Error((errData.error as string) || 'Conversation import failed');
         }
       }
 
@@ -257,8 +266,8 @@ export default function ImportPage() {
       setProgress('Scoring relationships...');
       const scoreRes = await fetch('/api/import', { method: 'PUT' });
       if (scoreRes.ok) {
-        const scoreData = await scoreRes.json();
-        setScoreStats(scoreData.tiers);
+        const scoreData = await safeJson(scoreRes);
+        setScoreStats(scoreData.tiers as { hot: number; warm: number; cold: number });
       }
 
       setStatus('complete');
