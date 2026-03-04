@@ -4,21 +4,21 @@ import { getUserId } from '@/lib/auth/getUserId';
 
 export const dynamic = 'force-dynamic';
 
-const RAPIDAPI_HOST = process.env.RAPIDAPI_HOST || 'fresh-linkedin-profile-data.p.rapidapi.com';
+const RAPIDAPI_HOST = process.env.RAPIDAPI_HOST || 'real-time-people-company-data.p.rapidapi.com';
 const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY || '';
 
 interface LinkedInProfileResponse {
-  data?: {
-    headline?: string;
-    summary?: string;
-    position?: Array<{
-      title?: string;
-      companyName?: string;
-      companyURL?: string;
-    }>;
-    profilePicture?: string;
-    geo?: { full?: string };
-  };
+  headline?: string;
+  summary?: string;
+  position?: Array<{
+    title?: string;
+    companyName?: string;
+    companyURL?: string;
+  }>;
+  profilePicture?: string;
+  geo?: { full?: string };
+  // Nested under data for some API variants
+  data?: LinkedInProfileResponse;
   connection?: number;
   follower?: number;
 }
@@ -38,7 +38,7 @@ async function enrichContact(linkedinUrl: string): Promise<{
   if (!match) return null;
   const username = match[1];
 
-  const url = `https://${RAPIDAPI_HOST}/data-connection-count?username=${encodeURIComponent(username)}`;
+  const url = `https://${RAPIDAPI_HOST}/?username=${encodeURIComponent(username)}`;
   const res = await fetch(url, {
     headers: {
       'X-RapidAPI-Key': RAPIDAPI_KEY,
@@ -54,21 +54,23 @@ async function enrichContact(linkedinUrl: string): Promise<{
   }
 
   const json: LinkedInProfileResponse = await res.json();
-  if (!json.data) {
+  // Support both flat (real-time-people-company-data) and nested (fresh-linkedin) formats
+  const profile = json.data || json;
+  if (!profile.position && !profile.headline) {
     console.error(`No data in RapidAPI response for ${username}:`, JSON.stringify(json).slice(0, 500));
     return null;
   }
 
-  const firstPosition = json.data.position?.[0];
+  const firstPosition = profile.position?.[0];
 
   return {
-    headline: json.data.headline || null,
-    bio: json.data.summary || null,
+    headline: profile.headline || null,
+    bio: profile.summary || null,
     current_title: firstPosition?.title || null,
     current_company: firstPosition?.companyName || null,
     company_url: firstPosition?.companyURL || null,
-    profile_picture_url: json.data.profilePicture || null,
-    location: json.data.geo?.full || null,
+    profile_picture_url: profile.profilePicture || null,
+    location: profile.geo?.full || null,
     connections: json.connection ?? null,
     followers: json.follower ?? null,
   };
