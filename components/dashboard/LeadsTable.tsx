@@ -15,6 +15,8 @@ interface Lead {
   full_name: string;
   company: string | null;
   position: string | null;
+  company_url: string | null;
+  location: string | null;
   total_score: number;
   tier: string;
   total_messages: number;
@@ -23,6 +25,9 @@ interface Lead {
   last_message_at: string | null;
   linkedin_url: string | null;
   is_enriched?: boolean;
+  revenue_estimate: string | null;
+  industry: string | null;
+  revenue_confidence: string | null;
 }
 
 interface LeadsTableProps {
@@ -55,6 +60,26 @@ function ScoreBar({ score }: { score: number }) {
       </div>
       <span className="text-sm font-mono">{score}</span>
     </div>
+  );
+}
+
+function RevenueBadge({ estimate, confidence }: { estimate: string | null; confidence: string | null }) {
+  if (!estimate) return <span className="text-[var(--text-tertiary)]">—</span>;
+  const colorMap: Record<string, string> = {
+    '<$1M': 'bg-gray-500/20 text-gray-400',
+    '$1-10M': 'bg-blue-500/20 text-blue-400',
+    '$10-50M': 'bg-cyan-500/20 text-cyan-400',
+    '$50-100M': 'bg-green-500/20 text-green-400',
+    '$100-500M': 'bg-amber-500/20 text-amber-400',
+    '$500M-1B': 'bg-orange-500/20 text-orange-400',
+    '$1B+': 'bg-red-500/20 text-red-400',
+  };
+  const cls = colorMap[estimate] || 'bg-gray-500/20 text-gray-400';
+  const suffix = confidence === 'low' ? '~' : '';
+  return (
+    <span className={`px-1.5 py-0.5 rounded text-xs font-medium whitespace-nowrap ${cls}`}>
+      {estimate}{suffix}
+    </span>
   );
 }
 
@@ -92,6 +117,8 @@ export default function LeadsTable({ leads, page, totalPages, onPageChange, sele
               </th>
               <th className="px-4 py-3 font-medium">Name</th>
               <th className="px-4 py-3 font-medium">Company</th>
+              <th className="px-4 py-3 font-medium">Location</th>
+              <th className="px-4 py-3 font-medium">Revenue</th>
               <th className="px-4 py-3 font-medium">Score</th>
               <th className="px-4 py-3 font-medium">Tier</th>
               <th className="px-4 py-3 font-medium">Tags</th>
@@ -133,7 +160,29 @@ export default function LeadsTable({ leads, page, totalPages, onPageChange, sele
                     </div>
                   </td>
                   <td className="px-4 py-3 text-sm text-[var(--text-secondary)]" onClick={() => router.push(`/dashboard/${lead.id}`)}>
-                    {lead.company || '—'}
+                    {lead.company_url ? (
+                      <a
+                        href={lead.company_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="text-[var(--accent)] hover:underline"
+                      >
+                        {lead.company}
+                      </a>
+                    ) : (
+                      lead.company || '—'
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-[var(--text-tertiary)]" onClick={() => router.push(`/dashboard/${lead.id}`)}>
+                    {lead.location ? (
+                      <span className="truncate block max-w-[120px]" title={lead.location}>
+                        {lead.location}
+                      </span>
+                    ) : '—'}
+                  </td>
+                  <td className="px-4 py-3" onClick={() => router.push(`/dashboard/${lead.id}`)}>
+                    <RevenueBadge estimate={lead.revenue_estimate} confidence={lead.revenue_confidence} />
                   </td>
                   <td className="px-4 py-3" onClick={() => router.push(`/dashboard/${lead.id}`)}>
                     <ScoreBar score={lead.total_score} />

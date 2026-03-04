@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import MetricsRow from '@/components/dashboard/MetricsRow';
 import FilterBar from '@/components/dashboard/FilterBar';
 import LeadsTable from '@/components/dashboard/LeadsTable';
-import { Loader2, Download, Tag, X, Plus, Sparkles } from 'lucide-react';
+import { Loader2, Download, Tag, X, Plus, Sparkles, Building2 } from 'lucide-react';
 
 interface Stats {
   totalContacts: number;
@@ -46,6 +46,10 @@ export default function DashboardPage() {
   // Enrichment
   const [enriching, setEnriching] = useState(false);
   const [enrichResult, setEnrichResult] = useState<{ success: number; failed: number } | null>(null);
+
+  // Company enrichment
+  const [enrichingCompanies, setEnrichingCompanies] = useState(false);
+  const [companyEnrichResult, setCompanyEnrichResult] = useState<{ enriched: number } | null>(null);
 
   // Tags
   const [allTags, setAllTags] = useState<TagData[]>([]);
@@ -226,6 +230,36 @@ export default function DashboardPage() {
     }
   };
 
+  // Enrich company revenue data
+  const enrichCompanies = async () => {
+    if (enrichingCompanies) return;
+    setEnrichingCompanies(true);
+    setCompanyEnrichResult(null);
+    try {
+      const companyNames = [...new Set(
+        leads
+          .map(l => (l.company as string) || '')
+          .filter(Boolean)
+      )];
+      if (companyNames.length === 0) return;
+      const res = await fetch('/api/enrich-company', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyNames }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCompanyEnrichResult({ enriched: data.enriched || 0 });
+        fetchLeads();
+        setTimeout(() => setCompanyEnrichResult(null), 5000);
+      }
+    } catch (err) {
+      console.error('Company enrichment failed:', err);
+    } finally {
+      setEnrichingCompanies(false);
+    }
+  };
+
   if (!stats) {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-48px)]">
@@ -250,14 +284,29 @@ export default function DashboardPage() {
             total={total}
           />
         </div>
-        <a
-          href={`/api/leads/export?tiers=${activeTiers.join(',')}`}
-          download
-          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border)] text-sm text-[var(--text-secondary)] hover:border-[var(--border-light)] hover:text-[var(--text-primary)] transition-colors whitespace-nowrap"
-        >
-          <Download size={14} />
-          Export All
-        </a>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={enrichCompanies}
+            disabled={enrichingCompanies || leads.length === 0}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border)] text-sm text-[var(--text-secondary)] hover:border-[var(--border-light)] hover:text-[var(--text-primary)] transition-colors whitespace-nowrap disabled:opacity-50"
+          >
+            {enrichingCompanies ? <Loader2 size={14} className="animate-spin" /> : <Building2 size={14} />}
+            {enrichingCompanies ? 'Enriching...' : 'Enrich Companies'}
+          </button>
+          {companyEnrichResult && (
+            <span className="text-xs text-green-400 animate-fade-in whitespace-nowrap">
+              {companyEnrichResult.enriched} enriched
+            </span>
+          )}
+          <a
+            href={`/api/leads/export?tiers=${activeTiers.join(',')}`}
+            download
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border)] text-sm text-[var(--text-secondary)] hover:border-[var(--border-light)] hover:text-[var(--text-primary)] transition-colors whitespace-nowrap"
+          >
+            <Download size={14} />
+            Export All
+          </a>
+        </div>
       </div>
 
       {/* Selection action bar */}

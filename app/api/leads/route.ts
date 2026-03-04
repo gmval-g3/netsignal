@@ -124,14 +124,34 @@ export async function GET(req: NextRequest) {
     });
 
     // Fetch enrichment data for these contacts
-    const enrichedMap = new Map<number, { current_title: string | null; current_company: string | null; headline: string | null }>();
+    const enrichedMap = new Map<number, { current_title: string | null; current_company: string | null; headline: string | null; company_url: string | null; location: string | null }>();
     if (contactIds.length > 0) {
       const { data: enriched } = await supabase
         .from('ns_enriched_contacts')
-        .select('contact_id, current_title, current_company, headline')
+        .select('contact_id, current_title, current_company, headline, company_url, location')
         .in('contact_id', contactIds);
       for (const e of enriched || []) {
         enrichedMap.set(e.contact_id, e);
+      }
+    }
+
+    // Fetch company revenue enrichment data
+    const companyNames = new Set<string>();
+    for (const row of data || []) {
+      const contact = row.ns_contacts as unknown as { company: string };
+      const enrichment = enrichedMap.get((row.ns_contacts as unknown as { id: number }).id);
+      const company = enrichment?.current_company || contact.company;
+      if (company) companyNames.add(company.toLowerCase());
+    }
+
+    const revenueMap = new Map<string, { revenue_estimate: string | null; industry: string | null; confidence: string | null }>();
+    if (companyNames.size > 0) {
+      const { data: revenueData } = await supabase
+        .from('ns_company_enrichment')
+        .select('company_name, revenue_estimate, industry, confidence')
+        .in('company_name', Array.from(companyNames));
+      for (const r of revenueData || []) {
+        revenueMap.set(r.company_name, r);
       }
     }
 
@@ -141,12 +161,16 @@ export async function GET(req: NextRequest) {
         position: string; email: string; linkedin_url: string;
       };
       const enrichment = enrichedMap.get(contact.id);
+      const companyName = enrichment?.current_company || contact.company;
+      const revenue = companyName ? revenueMap.get(companyName.toLowerCase()) : null;
       return {
         id: contact.id,
         full_name: contact.full_name,
-        company: enrichment?.current_company || contact.company,
+        company: companyName,
         position: enrichment?.current_title || contact.position,
         headline: enrichment?.headline || null,
+        company_url: enrichment?.company_url || null,
+        location: enrichment?.location || null,
         email: contact.email,
         linkedin_url: contact.linkedin_url,
         total_score: row.total_score,
@@ -162,6 +186,9 @@ export async function GET(req: NextRequest) {
         last_message_at: row.last_message_at,
         last_message_preview: row.last_message_preview,
         is_enriched: !!enrichment,
+        revenue_estimate: revenue?.revenue_estimate || null,
+        industry: revenue?.industry || null,
+        revenue_confidence: revenue?.confidence || null,
       };
     });
 
