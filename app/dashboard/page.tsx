@@ -39,6 +39,7 @@ export default function DashboardPage() {
   const [activeTiers, setActiveTiers] = useState<string[]>(['hot', 'warm', 'cold']);
   const [sort, setSort] = useState('total_score');
   const [dateFilter, setDateFilter] = useState('');
+  const [minMessages, setMinMessages] = useState('');
   const [loading, setLoading] = useState(true);
 
   // Selection
@@ -92,6 +93,10 @@ export default function DashboardPage() {
         search,
       });
 
+      if (minMessages) {
+        params.set('minMessages', minMessages);
+      }
+
       // Convert dateFilter preset to sinceDate/untilDate
       const now = new Date();
       if (dateFilter === 'last7d') {
@@ -118,7 +123,7 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, activeTiers, sort, search, dateFilter]);
+  }, [page, activeTiers, sort, search, dateFilter, minMessages]);
 
   useEffect(() => { fetchLeads(); }, [fetchLeads]);
 
@@ -142,6 +147,11 @@ export default function DashboardPage() {
 
   const handleDateFilterChange = (value: string) => {
     setDateFilter(value);
+    setPage(1);
+  };
+
+  const handleMinMessagesChange = (value: string) => {
+    setMinMessages(value);
     setPage(1);
   };
 
@@ -320,6 +330,8 @@ export default function DashboardPage() {
             total={total}
             dateFilter={dateFilter}
             onDateFilterChange={handleDateFilterChange}
+            minMessages={minMessages}
+            onMinMessagesChange={handleMinMessagesChange}
           />
         </div>
         <div className="flex items-center gap-2">

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Search, Info, X, Flame, Sun, Snowflake, Calendar } from 'lucide-react';
+import { Search, Info, X, Flame, Sun, Snowflake } from 'lucide-react';
 
 interface FilterBarProps {
   search: string;
@@ -13,6 +13,8 @@ interface FilterBarProps {
   total: number;
   dateFilter: string;
   onDateFilterChange: (value: string) => void;
+  minMessages: string;
+  onMinMessagesChange: (value: string) => void;
 }
 
 const DATE_FILTERS = [
@@ -111,7 +113,16 @@ function MethodologyModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-export default function FilterBar({ search, onSearchChange, activeTiers, onTiersChange, sort, onSortChange, total, dateFilter, onDateFilterChange }: FilterBarProps) {
+const MESSAGE_FILTERS = [
+  { value: '', label: 'Any count' },
+  { value: '2', label: '2+ messages' },
+  { value: '5', label: '5+ messages' },
+  { value: '10', label: '10+ messages' },
+  { value: '25', label: '25+ messages' },
+  { value: '50', label: '50+ messages' },
+];
+
+export default function FilterBar({ search, onSearchChange, activeTiers, onTiersChange, sort, onSortChange, total, dateFilter, onDateFilterChange, minMessages, onMinMessagesChange }: FilterBarProps) {
   const [showMethodology, setShowMethodology] = useState(false);
 
   const toggleTier = (tier: string) => {
@@ -183,18 +194,25 @@ export default function FilterBar({ search, onSearchChange, activeTiers, onTiers
           ))}
         </select>
 
-        <div className="flex items-center gap-1.5">
-          <Calendar size={14} className="text-[var(--text-tertiary)]" />
-          <select
-            value={dateFilter}
-            onChange={(e) => onDateFilterChange(e.target.value)}
-            className="px-3 py-1.5 rounded-lg bg-[var(--bg-tertiary)] border border-[var(--border)] text-[var(--text-secondary)] text-sm focus:outline-none cursor-pointer"
-          >
-            {DATE_FILTERS.map((d) => (
-              <option key={d.value} value={d.value}>{d.label}</option>
-            ))}
-          </select>
-        </div>
+        <select
+          value={dateFilter}
+          onChange={(e) => onDateFilterChange(e.target.value)}
+          className="px-3 py-1.5 rounded-lg bg-[var(--bg-tertiary)] border border-[var(--border)] text-[var(--text-secondary)] text-sm focus:outline-none cursor-pointer"
+        >
+          {DATE_FILTERS.map((d) => (
+            <option key={d.value} value={d.value}>{d.label}</option>
+          ))}
+        </select>
+
+        <select
+          value={minMessages}
+          onChange={(e) => onMinMessagesChange(e.target.value)}
+          className="px-3 py-1.5 rounded-lg bg-[var(--bg-tertiary)] border border-[var(--border)] text-[var(--text-secondary)] text-sm focus:outline-none cursor-pointer"
+        >
+          {MESSAGE_FILTERS.map((m) => (
+            <option key={m.value} value={m.value}>{m.label}</option>
+          ))}
+        </select>
 
         <button
           onClick={() => setShowMethodology(true)}
