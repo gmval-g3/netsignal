@@ -37,11 +37,11 @@ export default function ImportPage() {
 
   useEffect(() => {
     Promise.all([
-      fetch('/api/stats').then(r => safeJson(r)),
-      fetch('/api/settings').then(r => safeJson(r)),
+      fetch('/api/stats').then(r => safeJson(r)) as Promise<Record<string, number | Record<string, number>>>,
+      fetch('/api/settings').then(r => safeJson(r)) as Promise<Record<string, string>>,
     ]).then(([statsData, settings]) => {
-      if (statsData.totalContacts > 0) {
-        setExistingData(statsData);
+      if ((statsData.totalContacts as number) > 0) {
+        setExistingData(statsData as { totalContacts: number; totalMessages: number; tiers: Record<string, number> });
       }
       if (settings.user_name) setUserName(settings.user_name);
       if (settings.user_url) setUserUrl(settings.user_url);
