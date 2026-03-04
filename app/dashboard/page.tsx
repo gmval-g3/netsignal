@@ -38,6 +38,7 @@ export default function DashboardPage() {
   const [search, setSearch] = useState('');
   const [activeTiers, setActiveTiers] = useState<string[]>(['hot', 'warm', 'cold']);
   const [sort, setSort] = useState('total_score');
+  const [dateFilter, setDateFilter] = useState('');
   const [loading, setLoading] = useState(true);
 
   // Selection
@@ -90,6 +91,23 @@ export default function DashboardPage() {
         sort,
         search,
       });
+
+      // Convert dateFilter preset to sinceDate/untilDate
+      const now = new Date();
+      if (dateFilter === 'last7d') {
+        params.set('sinceDate', new Date(now.getTime() - 7 * 86400000).toISOString());
+      } else if (dateFilter === 'last30d') {
+        params.set('sinceDate', new Date(now.getTime() - 30 * 86400000).toISOString());
+      } else if (dateFilter === 'last90d') {
+        params.set('sinceDate', new Date(now.getTime() - 90 * 86400000).toISOString());
+      } else if (dateFilter === 'last6m') {
+        params.set('sinceDate', new Date(now.getTime() - 180 * 86400000).toISOString());
+      } else if (dateFilter === 'over6m') {
+        params.set('untilDate', new Date(now.getTime() - 180 * 86400000).toISOString());
+      } else if (dateFilter === 'over1y') {
+        params.set('untilDate', new Date(now.getTime() - 365 * 86400000).toISOString());
+      }
+
       const res = await fetch(`/api/leads?${params}`);
       const data = await res.json();
       setLeads(data.leads || []);
@@ -100,7 +118,7 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, activeTiers, sort, search]);
+  }, [page, activeTiers, sort, search, dateFilter]);
 
   useEffect(() => { fetchLeads(); }, [fetchLeads]);
 
@@ -119,6 +137,11 @@ export default function DashboardPage() {
 
   const handleSortChange = (value: string) => {
     setSort(value);
+    setPage(1);
+  };
+
+  const handleDateFilterChange = (value: string) => {
+    setDateFilter(value);
     setPage(1);
   };
 
@@ -220,7 +243,20 @@ export default function DashboardPage() {
         }
       }
       setEnrichResult({ success: totalSuccess, failed: totalFailed });
-      // Refresh leads to update enrichment indicators
+      // Auto-trigger company enrichment for newly enriched contacts
+      if (totalSuccess > 0) {
+        const enrichedLeads = leads.filter(l => ids.includes(l.id));
+        const companyNames = [...new Set(
+          enrichedLeads.map(l => (l.company as string) || '').filter(Boolean)
+        )];
+        if (companyNames.length > 0) {
+          fetch('/api/enrich-company', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ companyNames }),
+          }).catch(console.error);
+        }
+      }
       fetchLeads();
       setTimeout(() => setEnrichResult(null), 5000);
     } catch (err) {
@@ -282,6 +318,8 @@ export default function DashboardPage() {
             sort={sort}
             onSortChange={handleSortChange}
             total={total}
+            dateFilter={dateFilter}
+            onDateFilterChange={handleDateFilterChange}
           />
         </div>
         <div className="flex items-center gap-2">

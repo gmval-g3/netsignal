@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Search, Info, X, Flame, Sun, Snowflake } from 'lucide-react';
+import { Search, Info, X, Flame, Sun, Snowflake, Calendar } from 'lucide-react';
 
 interface FilterBarProps {
   search: string;
@@ -11,7 +11,19 @@ interface FilterBarProps {
   sort: string;
   onSortChange: (value: string) => void;
   total: number;
+  dateFilter: string;
+  onDateFilterChange: (value: string) => void;
 }
+
+const DATE_FILTERS = [
+  { value: '', label: 'Any time' },
+  { value: 'last7d', label: 'Last 7 days' },
+  { value: 'last30d', label: 'Last 30 days' },
+  { value: 'last90d', label: 'Last 3 months' },
+  { value: 'last6m', label: 'Last 6 months' },
+  { value: 'over6m', label: 'Over 6 months ago' },
+  { value: 'over1y', label: 'Over 1 year ago' },
+];
 
 const TIERS = [
   { value: 'hot', label: 'Hot', icon: Flame, activeClass: 'bg-red-500/20 text-red-400 border-red-500/40' },
@@ -99,7 +111,7 @@ function MethodologyModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-export default function FilterBar({ search, onSearchChange, activeTiers, onTiersChange, sort, onSortChange, total }: FilterBarProps) {
+export default function FilterBar({ search, onSearchChange, activeTiers, onTiersChange, sort, onSortChange, total, dateFilter, onDateFilterChange }: FilterBarProps) {
   const [showMethodology, setShowMethodology] = useState(false);
 
   const toggleTier = (tier: string) => {
@@ -170,6 +182,19 @@ export default function FilterBar({ search, onSearchChange, activeTiers, onTiers
             <option key={s.value} value={s.value}>{s.label}</option>
           ))}
         </select>
+
+        <div className="flex items-center gap-1.5">
+          <Calendar size={14} className="text-[var(--text-tertiary)]" />
+          <select
+            value={dateFilter}
+            onChange={(e) => onDateFilterChange(e.target.value)}
+            className="px-3 py-1.5 rounded-lg bg-[var(--bg-tertiary)] border border-[var(--border)] text-[var(--text-secondary)] text-sm focus:outline-none cursor-pointer"
+          >
+            {DATE_FILTERS.map((d) => (
+              <option key={d.value} value={d.value}>{d.label}</option>
+            ))}
+          </select>
+        </div>
 
         <button
           onClick={() => setShowMethodology(true)}

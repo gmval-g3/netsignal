@@ -20,6 +20,7 @@ export async function GET(req: NextRequest) {
     const limit = parseInt(url.searchParams.get('limit') || '50');
     const minMessages = url.searchParams.get('minMessages');
     const sinceDate = url.searchParams.get('sinceDate');
+    const untilDate = url.searchParams.get('untilDate');
     const offset = (page - 1) * limit;
 
     const allowedSorts = ['total_score', 'total_messages', 'last_message_at', 'full_name', 'reciprocity_score', 'recency_score', 'frequency_score'];
@@ -51,6 +52,10 @@ export async function GET(req: NextRequest) {
 
     if (sinceDate) {
       query = query.gte('last_message_at', sinceDate);
+    }
+
+    if (untilDate) {
+      query = query.lte('last_message_at', untilDate);
     }
 
     if (search) {
@@ -101,6 +106,9 @@ export async function GET(req: NextRequest) {
     }
     if (sinceDate) {
       countQuery = countQuery.gte('last_message_at', sinceDate);
+    }
+    if (untilDate) {
+      countQuery = countQuery.lte('last_message_at', untilDate);
     }
     if (search) {
       countQuery = countQuery.or(
