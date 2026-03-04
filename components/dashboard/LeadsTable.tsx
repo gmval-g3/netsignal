@@ -1,7 +1,8 @@
 'use client';
 
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ExternalLink, ChevronLeft, ChevronRight, Sparkles } from 'lucide-react';
+import { ExternalLink, ChevronLeft, ChevronRight, Sparkles, Columns3 } from 'lucide-react';
 
 interface Tag {
   tag_id: number;
@@ -26,9 +27,38 @@ interface Lead {
   linkedin_url: string | null;
   is_enriched?: boolean;
   revenue_estimate: string | null;
+  employee_estimate: string | null;
   industry: string | null;
   revenue_confidence: string | null;
+  headline: string | null;
+  email: string | null;
+  reciprocity_score: number;
+  frequency_score: number;
+  depth_score: number;
+  signal_score: number;
+  recency_score: number;
 }
+
+type ColumnKey = 'location' | 'revenue' | 'employees' | 'industry' | 'headline' | 'email' | 'score' | 'tier' | 'tags' | 'messages' | 'lastActive' | 'reciprocity' | 'frequency' | 'depth' | 'signal' | 'recency';
+
+const ALL_COLUMNS: { key: ColumnKey; label: string; default: boolean }[] = [
+  { key: 'location', label: 'Location', default: true },
+  { key: 'revenue', label: 'Revenue', default: true },
+  { key: 'employees', label: 'Employees', default: false },
+  { key: 'industry', label: 'Industry', default: false },
+  { key: 'headline', label: 'Headline', default: false },
+  { key: 'email', label: 'Email', default: false },
+  { key: 'score', label: 'Score', default: true },
+  { key: 'tier', label: 'Tier', default: true },
+  { key: 'tags', label: 'Tags', default: true },
+  { key: 'messages', label: 'Messages', default: true },
+  { key: 'lastActive', label: 'Last Active', default: true },
+  { key: 'reciprocity', label: 'Reciprocity', default: false },
+  { key: 'frequency', label: 'Frequency', default: false },
+  { key: 'depth', label: 'Depth', default: false },
+  { key: 'signal', label: 'Signal', default: false },
+  { key: 'recency', label: 'Recency', default: false },
+];
 
 interface LeadsTableProps {
   leads: Lead[];
@@ -100,9 +130,76 @@ function formatDate(dateStr: string | null): string {
 export default function LeadsTable({ leads, page, totalPages, onPageChange, selectedIds, onToggleSelect, onToggleAll, tagMap }: LeadsTableProps) {
   const router = useRouter();
   const allOnPageSelected = leads.length > 0 && leads.every(l => selectedIds.has(l.id));
+  const [visibleCols, setVisibleCols] = useState<Set<ColumnKey>>(
+    () => new Set(ALL_COLUMNS.filter(c => c.default).map(c => c.key))
+  );
+  const [showColMenu, setShowColMenu] = useState(false);
+
+  const toggleCol = (key: ColumnKey) => {
+    setVisibleCols(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const has = (key: ColumnKey) => visibleCols.has(key);
+
+  const renderCell = (lead: Lead, key: ColumnKey, contactTags: Tag[]) => {
+    const click = () => router.push(`/dashboard/${lead.id}`);
+    switch (key) {
+      case 'location': return <td key={key} className="px-4 py-3 text-sm text-[var(--text-tertiary)]" onClick={click}>{lead.location ? <span className="truncate block max-w-[120px]" title={lead.location}>{lead.location}</span> : '—'}</td>;
+      case 'revenue': return <td key={key} className="px-4 py-3" onClick={click}><RevenueBadge estimate={lead.revenue_estimate} confidence={lead.revenue_confidence} /></td>;
+      case 'employees': return <td key={key} className="px-4 py-3 text-sm text-[var(--text-secondary)]" onClick={click}>{lead.employee_estimate || '—'}</td>;
+      case 'industry': return <td key={key} className="px-4 py-3 text-sm text-[var(--text-secondary)]" onClick={click}>{lead.industry || '—'}</td>;
+      case 'headline': return <td key={key} className="px-4 py-3 text-sm text-[var(--text-tertiary)]" onClick={click}><span className="truncate block max-w-[200px]" title={lead.headline || ''}>{lead.headline || '—'}</span></td>;
+      case 'email': return <td key={key} className="px-4 py-3 text-sm text-[var(--text-secondary)]" onClick={click}>{lead.email || '—'}</td>;
+      case 'score': return <td key={key} className="px-4 py-3" onClick={click}><ScoreBar score={lead.total_score} /></td>;
+      case 'tier': return <td key={key} className="px-4 py-3" onClick={click}><TierBadge tier={lead.tier} /></td>;
+      case 'tags': return <td key={key} className="px-4 py-3" onClick={click}><div className="flex flex-wrap gap-1">{contactTags.map(tag => <span key={tag.tag_id} className="px-1.5 py-0.5 rounded text-xs" style={{ backgroundColor: tag.color + '20', color: tag.color, border: `1px solid ${tag.color}40` }}>{tag.name}</span>)}</div></td>;
+      case 'messages': return <td key={key} className="px-4 py-3 text-right text-sm" onClick={click}><span className="text-[var(--text-primary)]">{lead.total_messages}</span><span className="text-[var(--text-tertiary)] ml-1 text-xs">({lead.user_messages}↑ {lead.contact_messages}↓)</span></td>;
+      case 'lastActive': return <td key={key} className="px-4 py-3 text-right text-sm text-[var(--text-secondary)]" onClick={click}>{formatDate(lead.last_message_at)}</td>;
+      case 'reciprocity': return <td key={key} className="px-4 py-3 text-sm text-center font-mono" onClick={click}>{lead.reciprocity_score}</td>;
+      case 'frequency': return <td key={key} className="px-4 py-3 text-sm text-center font-mono" onClick={click}>{lead.frequency_score}</td>;
+      case 'depth': return <td key={key} className="px-4 py-3 text-sm text-center font-mono" onClick={click}>{lead.depth_score}</td>;
+      case 'signal': return <td key={key} className="px-4 py-3 text-sm text-center font-mono" onClick={click}>{lead.signal_score}</td>;
+      case 'recency': return <td key={key} className="px-4 py-3 text-sm text-center font-mono" onClick={click}>{lead.recency_score}</td>;
+    }
+  };
+
+  const visibleKeys = ALL_COLUMNS.filter(c => has(c.key));
 
   return (
     <div className="rounded-lg border border-[var(--border)] overflow-hidden">
+      {/* Column toggle */}
+      <div className="flex items-center justify-end px-4 py-2 bg-[var(--bg-secondary)] border-b border-[var(--border)]">
+        <div className="relative">
+          <button
+            onClick={() => setShowColMenu(!showColMenu)}
+            className="flex items-center gap-1.5 px-2 py-1 rounded text-xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition-colors"
+          >
+            <Columns3 size={14} />
+            Columns
+          </button>
+          {showColMenu && (
+            <div className="absolute right-0 top-full mt-1 w-48 z-20 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border)] shadow-xl p-2 space-y-0.5 animate-fade-in">
+              {ALL_COLUMNS.map(col => (
+                <label key={col.key} className="flex items-center gap-2 px-2 py-1.5 rounded text-sm hover:bg-[var(--bg-hover)] cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={has(col.key)}
+                    onChange={() => toggleCol(col.key)}
+                    className="rounded border-[var(--border)] accent-[var(--accent)]"
+                  />
+                  <span className="text-[var(--text-secondary)]">{col.label}</span>
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead>
@@ -117,13 +214,11 @@ export default function LeadsTable({ leads, page, totalPages, onPageChange, sele
               </th>
               <th className="px-4 py-3 font-medium">Name</th>
               <th className="px-4 py-3 font-medium">Company</th>
-              <th className="px-4 py-3 font-medium">Location</th>
-              <th className="px-4 py-3 font-medium">Revenue</th>
-              <th className="px-4 py-3 font-medium">Score</th>
-              <th className="px-4 py-3 font-medium">Tier</th>
-              <th className="px-4 py-3 font-medium">Tags</th>
-              <th className="px-4 py-3 font-medium text-right">Messages</th>
-              <th className="px-4 py-3 font-medium text-right">Last Active</th>
+              {visibleKeys.map(col => (
+                <th key={col.key} className={`px-4 py-3 font-medium ${['messages', 'lastActive'].includes(col.key) ? 'text-right' : ''} ${['reciprocity', 'frequency', 'depth', 'signal', 'recency'].includes(col.key) ? 'text-center' : ''}`}>
+                  {col.label}
+                </th>
+              ))}
               <th className="px-4 py-3 font-medium w-10"></th>
             </tr>
           </thead>
@@ -174,44 +269,7 @@ export default function LeadsTable({ leads, page, totalPages, onPageChange, sele
                       lead.company || '—'
                     )}
                   </td>
-                  <td className="px-4 py-3 text-sm text-[var(--text-tertiary)]" onClick={() => router.push(`/dashboard/${lead.id}`)}>
-                    {lead.location ? (
-                      <span className="truncate block max-w-[120px]" title={lead.location}>
-                        {lead.location}
-                      </span>
-                    ) : '—'}
-                  </td>
-                  <td className="px-4 py-3" onClick={() => router.push(`/dashboard/${lead.id}`)}>
-                    <RevenueBadge estimate={lead.revenue_estimate} confidence={lead.revenue_confidence} />
-                  </td>
-                  <td className="px-4 py-3" onClick={() => router.push(`/dashboard/${lead.id}`)}>
-                    <ScoreBar score={lead.total_score} />
-                  </td>
-                  <td className="px-4 py-3" onClick={() => router.push(`/dashboard/${lead.id}`)}>
-                    <TierBadge tier={lead.tier} />
-                  </td>
-                  <td className="px-4 py-3" onClick={() => router.push(`/dashboard/${lead.id}`)}>
-                    <div className="flex flex-wrap gap-1">
-                      {contactTags.map(tag => (
-                        <span
-                          key={tag.tag_id}
-                          className="px-1.5 py-0.5 rounded text-xs"
-                          style={{ backgroundColor: tag.color + '20', color: tag.color, border: `1px solid ${tag.color}40` }}
-                        >
-                          {tag.name}
-                        </span>
-                      ))}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-right text-sm" onClick={() => router.push(`/dashboard/${lead.id}`)}>
-                    <span className="text-[var(--text-primary)]">{lead.total_messages}</span>
-                    <span className="text-[var(--text-tertiary)] ml-1 text-xs">
-                      ({lead.user_messages}↑ {lead.contact_messages}↓)
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-right text-sm text-[var(--text-secondary)]" onClick={() => router.push(`/dashboard/${lead.id}`)}>
-                    {formatDate(lead.last_message_at)}
-                  </td>
+                  {visibleKeys.map(col => renderCell(lead, col.key, contactTags))}
                   <td className="px-4 py-3">
                     {lead.linkedin_url && (
                       <a

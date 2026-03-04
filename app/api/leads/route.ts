@@ -147,11 +147,11 @@ export async function GET(req: NextRequest) {
       if (company) companyNames.add(company.toLowerCase());
     }
 
-    const revenueMap = new Map<string, { revenue_estimate: string | null; industry: string | null; confidence: string | null }>();
+    const revenueMap = new Map<string, { revenue_estimate: string | null; employee_estimate: string | null; industry: string | null; confidence: string | null }>();
     if (companyNames.size > 0) {
       const { data: revenueData } = await supabase
         .from('ns_company_enrichment')
-        .select('company_name, revenue_estimate, industry, confidence')
+        .select('company_name, revenue_estimate, employee_estimate, industry, confidence')
         .in('company_name', Array.from(companyNames));
       for (const r of revenueData || []) {
         revenueMap.set(r.company_name, r);
@@ -190,6 +190,7 @@ export async function GET(req: NextRequest) {
         last_message_preview: row.last_message_preview,
         is_enriched: !!enrichment,
         revenue_estimate: revenue?.revenue_estimate || null,
+        employee_estimate: revenue?.employee_estimate || null,
         industry: revenue?.industry || null,
         revenue_confidence: revenue?.confidence || null,
       };
